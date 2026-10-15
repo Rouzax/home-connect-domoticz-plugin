@@ -1,0 +1,16 @@
+# Keep `git archive` output and release assets lean. Domoticz only imports the Python modules
+# at runtime; everything below is development material.
+docs/                    export-ignore
+tests/                   export-ignore
+tools/                   export-ignore
+_temp/                   export-ignore
+.github/                 export-ignore
+site/                    export-ignore
+CONTRIBUTING.md          export-ignore
+CHANGELOG.md             export-ignore
+.vulture_whitelist.py    export-ignore
+requirements-dev.txt     export-ignore
+.pre-commit-config.yaml  export-ignore
+pyproject.toml           export-ignore
+.gitignore               export-ignore
+.gitattributes           export-ignore

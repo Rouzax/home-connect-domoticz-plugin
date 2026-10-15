@@ -1,0 +1,31 @@
+[project]
+name = "home-connect-domoticz-plugin"
+version = "0.1.0"
+description = "Home Connect (Bosch, Siemens, Neff, Gaggenau) plugin for Domoticz"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["_temp", "site", ".vulture_whitelist.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "SIM", "UP"]
+# plugin.py: the docstring is the XML manifest (long lines), and Domoticz injects Parameters
+# and Devices into module globals at runtime.
+per-file-ignores = { "plugin.py" = ["E501", "F821"], "tools/compat_probe/plugin.py" = ["E501", "F821"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=. --cov-report=term-missing"
+
+[tool.pyright]
+include = ["."]
+exclude = ["tests", "docs", "_temp", "tools", "site", ".venv"]
+# Flat plugin layout: modules import siblings by bare name.
+extraPaths = ["."]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
+[tool.coverage.run]
+omit = ["tests/*", "tools/*", "plugin.py", "_temp/*"]
