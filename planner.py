@@ -861,7 +861,7 @@ def link_markup(url: str, lang: str) -> str:
     if not url:
         return ""
     label = text.escape(catalog.word("login_link", lang))
-    return f'<a href="{text.escape(url)}" target="_blank">{label}</a>'
+    return f'<a href="{text.escape_attribute(url)}" target="_blank">{label}</a>'
 
 
 def bullets(items: Iterable[str]) -> str:

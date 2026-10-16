@@ -38,7 +38,13 @@ def _strip_controls(text: str) -> str:
 
 
 def escape(value: object) -> str:
-    """Expects text already bounded by clean_label; it does no length capping itself."""
+    """For element text, which Domoticz renders as HTML. Quotes stay literal because scripts
+    read the same sValue; only an attribute value needs them escaped (escape_attribute).
+    Expects text already bounded by clean_label; it does no length capping itself."""
+    return html.escape(str(value), quote=False)
+
+
+def escape_attribute(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 

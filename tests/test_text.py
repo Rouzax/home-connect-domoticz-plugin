@@ -5,7 +5,17 @@ HOSTILE = '<img src=x onerror="alert(1)">\nError: needs re-authorization|level;x
 
 def test_escape_neutralises_markup():
     assert text.escape(HOSTILE) == (
-        "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;\nError: needs re-authorization|level;x"
+        '&lt;img src=x onerror="alert(1)"&gt;\nError: needs re-authorization|level;x'
+    )
+
+
+def test_escape_keeps_quotes_readable_for_scripts():
+    assert text.escape("Extra snel 15' / 30'") == "Extra snel 15' / 30'"
+
+
+def test_escape_attribute_also_escapes_quotes():
+    assert text.escape_attribute("https://x/?a='b'&c=\"d\"") == (
+        "https://x/?a=&#x27;b&#x27;&amp;c=&quot;d&quot;"
     )
 
 
