@@ -1,0 +1,757 @@
+{
+ "appliance": {
+  "brand": "Siemens",
+  "connected": true,
+  "enumber": "HCFIXTURE02/00",
+  "haId": "SIEMENS-HCFIXTURE02-000000000002",
+  "name": "Oven 2",
+  "type": "Oven",
+  "vib": "HCFIXTURE02"
+ },
+ "status": {
+  "status": 200,
+  "body": {
+   "data": {
+    "status": [
+     {
+      "key": "BSH.Common.Status.DoorState",
+      "value": "BSH.Common.EnumType.DoorState.Closed",
+      "name": "Door",
+      "displayvalue": "Closed"
+     },
+     {
+      "key": "BSH.Common.Status.InteriorIlluminationActive",
+      "value": false,
+      "name": "Interior lighting"
+     },
+     {
+      "key": "BSH.Common.Status.LocalControlActive",
+      "value": false,
+      "name": "Local operation active"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlStartAllowed",
+      "value": false,
+      "name": "Remote Start"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlActive",
+      "value": true,
+      "name": "Remote Control"
+     },
+     {
+      "key": "BSH.Common.Status.OperationState",
+      "value": "BSH.Common.EnumType.OperationState.Inactive",
+      "name": "Operation state",
+      "displayvalue": "Inactive"
+     },
+     {
+      "key": "Cooking.Oven.Status.CurrentCavityTemperature",
+      "value": 60,
+      "unit": "°C"
+     }
+    ]
+   }
+  }
+ },
+ "settings": {
+  "status": 200,
+  "body": {
+   "data": {
+    "settings": [
+     {
+      "key": "BSH.Common.Setting.ChildLock",
+      "value": false,
+      "name": "Childproof lock"
+     },
+     {
+      "key": "BSH.Common.Setting.PowerState",
+      "value": "BSH.Common.EnumType.PowerState.Standby",
+      "name": "Power status",
+      "displayvalue": "Standby"
+     },
+     {
+      "key": "BSH.Common.Setting.AlarmClock",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Alarm"
+     },
+     {
+      "key": "Cooking.Oven.Setting.SabbathMode",
+      "value": false,
+      "name": "Sabbath mode"
+     }
+    ]
+   }
+  }
+ },
+ "programs/available": {
+  "status": 200,
+  "body": {
+   "data": {
+    "active": {
+     "constraints": {
+      "access": "read"
+     }
+    },
+    "programs": [
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.SlowCook",
+      "name": "Slow cook"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.HotAir",
+      "name": "4D Hot air"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.TopBottomHeating",
+      "name": "Top and bottom heat"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.HotAirEco",
+      "name": "Hot air gentle"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.TopBottomHeatingEco",
+      "name": "Top and bottom heat gentle"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.HotAirGrilling",
+      "name": "Hot air grilling"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.PizzaSetting",
+      "name": "Pizza setting"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.BottomHeating",
+      "name": "Bottom heating"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.PreheatOvenware",
+      "name": "Preheat ovenware"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.KeepWarm",
+      "name": "Keep warm"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.HeatingMode.FrozenHeatupSpecial",
+      "name": "CoolStart function"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Cooking.Oven.Program.SteamModes.Steam",
+      "name": "Steam"
+     }
+    ],
+    "selected": {
+     "constraints": {
+      "access": "readWrite"
+     }
+    }
+   }
+  }
+ },
+ "programs/selected": {
+  "status": 404,
+  "body": {
+   "error": {
+    "description": "There is no program selected",
+    "key": "SDK.Error.NoProgramSelected"
+   }
+  }
+ },
+ "programs/active": {
+  "status": 404,
+  "body": {
+   "error": {
+    "description": "There is no program active",
+    "key": "SDK.Error.NoProgramActive"
+   }
+  }
+ },
+ "commands": {
+  "status": 200,
+  "body": {
+   "data": {
+    "commands": [
+     {
+      "key": "BSH.Common.Command.AcknowledgeEvent",
+      "name": "OK"
+     }
+    ]
+   }
+  }
+ },
+ "program_details": {
+  "Cooking.Oven.Program.HeatingMode.SlowCook": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.SlowCook",
+     "name": "Slow cook",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 70,
+        "max": 120,
+        "default": 80
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.HotAir": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.HotAir",
+     "name": "4D Hot air",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 160
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Cooking.Oven.Option.FastPreHeat",
+       "type": "Boolean",
+       "constraints": {
+        "default": false
+       },
+       "name": "Rapid heating"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.TopBottomHeating": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.TopBottomHeating",
+     "name": "Top and bottom heat",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 170
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Cooking.Oven.Option.FastPreHeat",
+       "type": "Boolean",
+       "constraints": {
+        "default": false
+       },
+       "name": "Rapid heating"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.HotAirEco": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.HotAirEco",
+     "name": "Hot air gentle",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 160
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.TopBottomHeatingEco": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.TopBottomHeatingEco",
+     "name": "Top and bottom heat gentle",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 170
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.HotAirGrilling": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.HotAirGrilling",
+     "name": "Hot air grilling",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 180
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.PizzaSetting": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.PizzaSetting",
+     "name": "Pizza setting",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 200
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.BottomHeating": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.BottomHeating",
+     "name": "Bottom heating",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 150
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.PreheatOvenware": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.PreheatOvenware",
+     "name": "Preheat ovenware",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 70,
+        "default": 50
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.KeepWarm": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.KeepWarm",
+     "name": "Keep warm",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 60,
+        "max": 100,
+        "default": 60
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.HeatingMode.FrozenHeatupSpecial": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.HeatingMode.FrozenHeatupSpecial",
+     "name": "CoolStart function",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 250,
+        "default": 200
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 1,
+        "max": 86340,
+        "default": 60
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Cooking.Oven.Program.SteamModes.Steam": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Cooking.Oven.Program.SteamModes.Steam",
+     "name": "Steam",
+     "options": [
+      {
+       "name": "Cavity temperature",
+       "key": "Cooking.Oven.Option.SetpointTemperature",
+       "constraints": {
+        "min": 30,
+        "max": 100,
+        "default": 100
+       },
+       "unit": "°C",
+       "type": "Double"
+      },
+      {
+       "name": "Adjust the duration",
+       "key": "BSH.Common.Option.Duration",
+       "constraints": {
+        "min": 60,
+        "max": 86340,
+        "default": 1200
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86340,
+        "default": 0
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  }
+ }
+}

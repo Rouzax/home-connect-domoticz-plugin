@@ -1,0 +1,338 @@
+{
+ "appliance": {
+  "brand": "Bosch",
+  "connected": true,
+  "enumber": "HCFIXTURE04/00",
+  "haId": "000000000000000004",
+  "name": "Washer",
+  "type": "Washer",
+  "vib": "HCFIXTURE04"
+ },
+ "status": {
+  "status": 200,
+  "body": {
+   "data": {
+    "status": [
+     {
+      "key": "BSH.Common.Status.DoorState",
+      "value": "BSH.Common.EnumType.DoorState.Closed",
+      "name": "Door",
+      "displayvalue": "Closed"
+     },
+     {
+      "key": "BSH.Common.Status.LocalControlActive",
+      "value": false,
+      "name": "Local operation active"
+     },
+     {
+      "key": "BSH.Common.Status.OperationState",
+      "value": "BSH.Common.EnumType.OperationState.Finished",
+      "name": "Operation state",
+      "displayvalue": "Completed"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlActive",
+      "value": true,
+      "name": "Remote Control"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlStartAllowed",
+      "value": true,
+      "name": "Remote Start"
+     }
+    ]
+   }
+  }
+ },
+ "settings": {
+  "status": 200,
+  "body": {
+   "data": {
+    "settings": [
+     {
+      "key": "BSH.Common.Setting.ChildLock",
+      "value": false,
+      "name": "Childproof lock"
+     },
+     {
+      "key": "BSH.Common.Setting.PowerState",
+      "value": "BSH.Common.EnumType.PowerState.On",
+      "name": "Power status",
+      "displayvalue": "On"
+     },
+     {
+      "key": "LaundryCare.Washer.Setting.IDos1BaseLevel",
+      "value": 50,
+      "unit": "ml",
+      "name": "Basic dosing volume: detergent"
+     },
+     {
+      "key": "LaundryCare.Washer.Setting.IDos2BaseLevel",
+      "value": 14,
+      "unit": "ml",
+      "name": "Basic dosing volume: detergent or softener"
+     }
+    ]
+   }
+  }
+ },
+ "programs/available": {
+  "status": 409,
+  "body": {
+   "error": {
+    "description": "Request cannot be performed in the current operation state",
+    "key": "SDK.Error.WrongOperationState"
+   }
+  }
+ },
+ "programs/selected": {
+  "status": 200,
+  "body": {
+   "data": {
+    "constraints": {
+     "access": "read"
+    },
+    "key": "LaundryCare.Washer.Program.DelicatesSilk",
+    "name": "Delicates/Silk",
+    "options": [
+     {
+      "key": "BSH.Common.Option.EnergyForecast",
+      "value": 13,
+      "unit": "%",
+      "name": "Energy"
+     },
+     {
+      "key": "BSH.Common.Option.FinishInRelative",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Finish time"
+     },
+     {
+      "key": "BSH.Common.Option.WaterForecast",
+      "value": 36,
+      "unit": "%",
+      "name": "Water"
+     },
+     {
+      "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Estimated total programme duration"
+     },
+     {
+      "key": "LaundryCare.Common.Option.SilentMode",
+      "value": false,
+      "name": "Silent"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.IDos1Active",
+      "value": true,
+      "name": "Dosing dispenser 1"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.IDos2Active",
+      "value": true,
+      "name": "Dosing dispenser 2"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.LessIroning",
+      "value": false,
+      "name": "Less Ironing"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.MiniLoad",
+      "value": false,
+      "name": "Miniload"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Prewash",
+      "value": false,
+      "name": "Pre-wash"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.RinseHold",
+      "value": false,
+      "name": "Rinse Hold"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.RinsePlus",
+      "value": "LaundryCare.Washer.EnumType.RinsePlus.Off",
+      "name": "Extra Rinse",
+      "displayvalue": "Off"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Soak",
+      "value": false,
+      "name": "Soaking"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.SpinSpeed",
+      "value": "LaundryCare.Washer.EnumType.SpinSpeed.RPM800",
+      "name": "Spin Speed",
+      "displayvalue": "800 rpm"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Stains",
+      "value": "LaundryCare.Washer.EnumType.Stains.Off",
+      "name": "Anti-Stain System",
+      "displayvalue": "Off"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Temperature",
+      "value": "LaundryCare.Washer.EnumType.Temperature.GC30",
+      "name": "Temperature",
+      "displayvalue": "30°C"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.WaterPlus",
+      "value": false,
+      "name": "Water Plus"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+      "value": true,
+      "name": "Estimated remaining programme time"
+     }
+    ]
+   }
+  }
+ },
+ "programs/active": {
+  "status": 200,
+  "body": {
+   "data": {
+    "constraints": {
+     "access": "readWrite"
+    },
+    "key": "LaundryCare.Washer.Program.DelicatesSilk",
+    "name": "Delicates/Silk",
+    "options": [
+     {
+      "key": "BSH.Common.Option.EnergyForecast",
+      "value": 13,
+      "unit": "%",
+      "name": "Energy"
+     },
+     {
+      "key": "BSH.Common.Option.FinishInRelative",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Finish time"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTime",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Remaining programme running time"
+     },
+     {
+      "key": "BSH.Common.Option.WaterForecast",
+      "value": 36,
+      "unit": "%",
+      "name": "Water"
+     },
+     {
+      "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Estimated total programme duration"
+     },
+     {
+      "key": "LaundryCare.Common.Option.SilentMode",
+      "value": false,
+      "name": "Silent"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.IDos1Active",
+      "value": true,
+      "name": "Dosing dispenser 1"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.IDos2Active",
+      "value": true,
+      "name": "Dosing dispenser 2"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.LessIroning",
+      "value": false,
+      "name": "Less Ironing"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.MiniLoad",
+      "value": false,
+      "name": "Miniload"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Prewash",
+      "value": false,
+      "name": "Pre-wash"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.RinseHold",
+      "value": false,
+      "name": "Rinse Hold"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.RinsePlus",
+      "value": "LaundryCare.Washer.EnumType.RinsePlus.Off",
+      "name": "Extra Rinse",
+      "displayvalue": "Off"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Soak",
+      "value": false,
+      "name": "Soaking"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.SpinSpeed",
+      "value": "LaundryCare.Washer.EnumType.SpinSpeed.RPM800",
+      "name": "Spin Speed",
+      "displayvalue": "800 rpm"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Stains",
+      "value": "LaundryCare.Washer.EnumType.Stains.Off",
+      "name": "Anti-Stain System",
+      "displayvalue": "Off"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.Temperature",
+      "value": "LaundryCare.Washer.EnumType.Temperature.GC30",
+      "name": "Temperature",
+      "displayvalue": "30°C"
+     },
+     {
+      "key": "LaundryCare.Washer.Option.WaterPlus",
+      "value": false,
+      "name": "Water Plus"
+     },
+     {
+      "key": "BSH.Common.Option.ProgramProgress",
+      "value": 100,
+      "unit": "%",
+      "name": "Current programme progress"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+      "value": true,
+      "name": "Estimated remaining programme time"
+     }
+    ]
+   }
+  }
+ },
+ "commands": {
+  "status": 200,
+  "body": {
+   "data": {
+    "commands": [
+     {
+      "key": "BSH.Common.Command.AcknowledgeEvent",
+      "name": "OK"
+     }
+    ]
+   }
+  }
+ },
+ "program_details": {}
+}

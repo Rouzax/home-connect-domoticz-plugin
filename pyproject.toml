@@ -28,4 +28,16 @@ pythonVersion = "3.11"
 typeCheckingMode = "basic"
 
 [tool.coverage.run]
-omit = ["tests/*", "tools/*", "plugin.py", "_temp/*"]
+omit = ["tests/*", "tools/*", "_temp/*"]
+# Each run writes its own data file and pytest-cov combines them, so concurrent runs in one
+# checkout never write the same file.
+parallel = true
+
+[tool.coverage.report]
+# Ratchet: raise this floor whenever measured total coverage rises; never lower it.
+fail_under = 97
+
+[tool.vulture]
+paths = [".", ".vulture_whitelist.py"]
+exclude = [".venv/", "_temp/"]
+min_confidence = 80

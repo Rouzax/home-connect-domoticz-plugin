@@ -1,0 +1,54 @@
+{
+ "status": 200,
+ "body": {
+  "data": {
+   "homeappliances": [
+    {
+     "brand": "Siemens",
+     "connected": true,
+     "enumber": "HCFIXTURE01/00",
+     "haId": "SIEMENS-HCFIXTURE01-000000000001",
+     "name": "Oven 1",
+     "type": "Oven",
+     "vib": "HCFIXTURE01"
+    },
+    {
+     "brand": "Siemens",
+     "connected": true,
+     "enumber": "HCFIXTURE02/00",
+     "haId": "SIEMENS-HCFIXTURE02-000000000002",
+     "name": "Oven 2",
+     "type": "Oven",
+     "vib": "HCFIXTURE02"
+    },
+    {
+     "brand": "Siemens",
+     "connected": true,
+     "enumber": "HCFIXTURE03/00",
+     "haId": "000000000000000003",
+     "name": "Dishwasher",
+     "type": "Dishwasher",
+     "vib": "HCFIXTURE03"
+    },
+    {
+     "brand": "Bosch",
+     "connected": true,
+     "enumber": "HCFIXTURE04/00",
+     "haId": "000000000000000004",
+     "name": "Washer",
+     "type": "Washer",
+     "vib": "HCFIXTURE04"
+    },
+    {
+     "brand": "Bosch",
+     "connected": true,
+     "enumber": "HCFIXTURE05/00",
+     "haId": "000000000000000005",
+     "name": "Dryer",
+     "type": "Dryer",
+     "vib": "HCFIXTURE05"
+    }
+   ]
+  }
+ }
+}

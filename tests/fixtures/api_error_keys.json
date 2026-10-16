@@ -1,0 +1,190 @@
+[
+ {
+  "status": 400,
+  "key": "400"
+ },
+ {
+  "status": 401,
+  "key": "401"
+ },
+ {
+  "status": 401,
+  "key": "invalid_token"
+ },
+ {
+  "status": 403,
+  "key": "insufficient_scope"
+ },
+ {
+  "status": 404,
+  "key": "404"
+ },
+ {
+  "status": 404,
+  "key": "SDK.Error.ActiveProgramSet"
+ },
+ {
+  "status": 404,
+  "key": "SDK.Error.NoProgramActive"
+ },
+ {
+  "status": 404,
+  "key": "SDK.Error.NoProgramSelected"
+ },
+ {
+  "status": 404,
+  "key": "SDK.Error.NotInSimulator"
+ },
+ {
+  "status": 404,
+  "key": "SDK.Error.UnsupportedProgram"
+ },
+ {
+  "status": 405,
+  "key": "405"
+ },
+ {
+  "status": 406,
+  "key": "406"
+ },
+ {
+  "status": 409,
+  "key": "BSH.Common.Error.LockedByLocalControl"
+ },
+ {
+  "status": 409,
+  "key": "BSH.Common.Error.RemoteControlNotActive"
+ },
+ {
+  "status": 409,
+  "key": "BSH.Common.Error.RemoteStartNotActive"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ActiveProgramNotSet"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ActiveProgramSet"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.BatteryLevelTooLow"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ConsumerProducts.CleaningRobot.Status.AlreadyAtHome"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ConsumerProducts.CleaningRobot.Status.DustBoxNotInserted"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ConsumerProducts.CleaningRobot.Status.Lifted"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.Cooking.Oven.Status.FrontPanelOpen"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.Cooking.Oven.Status.MeatprobePlugged"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.HomeAppliance.Connection.Initialization.Failed"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.InvalidOptionCombination"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.InvalidOptionState"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.InvalidOptionValue"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.InvalidSettingState"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.InvalidSettingValue"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.MissingOptionValue"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ProgramNotAvailable"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.ProgramNotWritable"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.SelectedProgramNotSet"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedCommand"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedKey"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedOperation"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedOption"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedProgram"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedSetting"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedStatus"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedUnit"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.UnsupportedValue"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.WrongDoorState"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.WrongOperationState"
+ },
+ {
+  "status": 409,
+  "key": "SDK.Error.WrongProgramState"
+ },
+ {
+  "status": 415,
+  "key": "415"
+ },
+ {
+  "status": 429,
+  "key": "429"
+ }
+]

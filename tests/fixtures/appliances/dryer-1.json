@@ -1,0 +1,361 @@
+{
+ "appliance": {
+  "brand": "Bosch",
+  "connected": true,
+  "enumber": "HCFIXTURE05/00",
+  "haId": "000000000000000005",
+  "name": "Dryer",
+  "type": "Dryer",
+  "vib": "HCFIXTURE05"
+ },
+ "status": {
+  "status": 200,
+  "body": {
+   "data": {
+    "status": [
+     {
+      "key": "BSH.Common.Status.DoorState",
+      "value": "BSH.Common.EnumType.DoorState.Closed",
+      "name": "Door",
+      "displayvalue": "Closed"
+     },
+     {
+      "key": "BSH.Common.Status.LocalControlActive",
+      "value": false,
+      "name": "Local operation active"
+     },
+     {
+      "key": "BSH.Common.Status.OperationState",
+      "value": "BSH.Common.EnumType.OperationState.Run",
+      "name": "Operation state",
+      "displayvalue": "Running"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlActive",
+      "value": true,
+      "name": "Remote Control"
+     },
+     {
+      "key": "BSH.Common.Status.RemoteControlStartAllowed",
+      "value": true,
+      "name": "Remote Start"
+     }
+    ]
+   }
+  }
+ },
+ "settings": {
+  "status": 200,
+  "body": {
+   "data": {
+    "settings": [
+     {
+      "key": "BSH.Common.Setting.ChildLock",
+      "value": false,
+      "name": "Childproof lock"
+     },
+     {
+      "key": "BSH.Common.Setting.PowerState",
+      "value": "BSH.Common.EnumType.PowerState.On",
+      "name": "Power status",
+      "displayvalue": "On"
+     }
+    ]
+   }
+  }
+ },
+ "programs/available": {
+  "status": 200,
+  "body": {
+   "data": {
+    "active": {
+     "constraints": {
+      "access": "readWrite"
+     },
+     "key": "LaundryCare.Dryer.Program.Cotton",
+     "name": "Cotton",
+     "options": [
+      {
+       "key": "LaundryCare.Common.Option.ReferToProgram",
+       "value": 0
+      },
+      {
+       "key": "BSH.Common.Option.RemainingProgramTime",
+       "value": 3057,
+       "unit": "seconds",
+       "name": "Remaining programme running time"
+      },
+      {
+       "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+       "value": 3060,
+       "unit": "seconds",
+       "name": "Estimated total programme duration"
+      },
+      {
+       "key": "LaundryCare.Common.Option.SpeedPerfect",
+       "value": false,
+       "name": "SpeedPerfect"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.DryingTarget",
+       "value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus",
+       "name": "Drying Target",
+       "displayvalue": "Cupboard Dry Plus"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.Gentle",
+       "value": false,
+       "name": "Gentle Dry"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.HalfLoad",
+       "value": false,
+       "name": "Half load"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.WrinkleGuard",
+       "value": "LaundryCare.Dryer.EnumType.WrinkleGuard.Min60",
+       "name": "Less Ironing",
+       "displayvalue": "60 min"
+      },
+      {
+       "key": "BSH.Common.Option.ProgramProgress",
+       "value": 87,
+       "unit": "%",
+       "name": "Current programme progress"
+      },
+      {
+       "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+       "value": true,
+       "name": "Estimated remaining programme time"
+      },
+      {
+       "key": "LaundryCare.Common.Option.ProcessPhase",
+       "value": "LaundryCare.Common.EnumType.ProcessPhase.IronDryReached",
+       "name": "Process Phase",
+       "displayvalue": "Drying target Iron Dry reached"
+      }
+     ]
+    },
+    "programs": [
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "LaundryCare.Dryer.Program.Cotton",
+      "name": "Cotton"
+     }
+    ],
+    "selected": {
+     "constraints": {
+      "access": "read"
+     },
+     "key": "LaundryCare.Dryer.Program.Cotton",
+     "name": "Cotton",
+     "options": [
+      {
+       "key": "LaundryCare.Common.Option.ReferToProgram",
+       "value": 0
+      },
+      {
+       "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+       "value": 3060,
+       "unit": "seconds",
+       "name": "Estimated total programme duration"
+      },
+      {
+       "key": "LaundryCare.Common.Option.SpeedPerfect",
+       "value": false,
+       "name": "SpeedPerfect"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.DryingTarget",
+       "value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus",
+       "name": "Drying Target",
+       "displayvalue": "Cupboard Dry Plus"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.Gentle",
+       "value": false,
+       "name": "Gentle Dry"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.HalfLoad",
+       "value": false,
+       "name": "Half load"
+      },
+      {
+       "key": "LaundryCare.Dryer.Option.WrinkleGuard",
+       "value": "LaundryCare.Dryer.EnumType.WrinkleGuard.Min60",
+       "name": "Less Ironing",
+       "displayvalue": "60 min"
+      },
+      {
+       "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+       "value": true,
+       "name": "Estimated remaining programme time"
+      }
+     ]
+    }
+   }
+  }
+ },
+ "programs/selected": {
+  "status": 200,
+  "body": {
+   "data": {
+    "constraints": {
+     "access": "read"
+    },
+    "key": "LaundryCare.Dryer.Program.Cotton",
+    "name": "Cotton",
+    "options": [
+     {
+      "key": "LaundryCare.Common.Option.ReferToProgram",
+      "value": 0
+     },
+     {
+      "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+      "value": 3060,
+      "unit": "seconds",
+      "name": "Estimated total programme duration"
+     },
+     {
+      "key": "LaundryCare.Common.Option.SpeedPerfect",
+      "value": false,
+      "name": "SpeedPerfect"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.DryingTarget",
+      "value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus",
+      "name": "Drying Target",
+      "displayvalue": "Cupboard Dry Plus"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.Gentle",
+      "value": false,
+      "name": "Gentle Dry"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.HalfLoad",
+      "value": false,
+      "name": "Half load"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.WrinkleGuard",
+      "value": "LaundryCare.Dryer.EnumType.WrinkleGuard.Min60",
+      "name": "Less Ironing",
+      "displayvalue": "60 min"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+      "value": true,
+      "name": "Estimated remaining programme time"
+     }
+    ]
+   }
+  }
+ },
+ "programs/active": {
+  "status": 200,
+  "body": {
+   "data": {
+    "constraints": {
+     "access": "readWrite"
+    },
+    "key": "LaundryCare.Dryer.Program.Cotton",
+    "name": "Cotton",
+    "options": [
+     {
+      "key": "LaundryCare.Common.Option.ReferToProgram",
+      "value": 0
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTime",
+      "value": 3054,
+      "unit": "seconds",
+      "name": "Remaining programme running time"
+     },
+     {
+      "key": "BSH.Common.Option.EstimatedTotalProgramTime",
+      "value": 3060,
+      "unit": "seconds",
+      "name": "Estimated total programme duration"
+     },
+     {
+      "key": "LaundryCare.Common.Option.SpeedPerfect",
+      "value": false,
+      "name": "SpeedPerfect"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.DryingTarget",
+      "value": "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus",
+      "name": "Drying Target",
+      "displayvalue": "Cupboard Dry Plus"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.Gentle",
+      "value": false,
+      "name": "Gentle Dry"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.HalfLoad",
+      "value": false,
+      "name": "Half load"
+     },
+     {
+      "key": "LaundryCare.Dryer.Option.WrinkleGuard",
+      "value": "LaundryCare.Dryer.EnumType.WrinkleGuard.Min60",
+      "name": "Less Ironing",
+      "displayvalue": "60 min"
+     },
+     {
+      "key": "BSH.Common.Option.ProgramProgress",
+      "value": 87,
+      "unit": "%",
+      "name": "Current programme progress"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+      "value": true,
+      "name": "Estimated remaining programme time"
+     },
+     {
+      "key": "LaundryCare.Common.Option.ProcessPhase",
+      "value": "LaundryCare.Common.EnumType.ProcessPhase.IronDryReached",
+      "name": "Process Phase",
+      "displayvalue": "Drying target Iron Dry reached"
+     }
+    ]
+   }
+  }
+ },
+ "commands": {
+  "status": 200,
+  "body": {
+   "data": {
+    "commands": [
+     {
+      "key": "BSH.Common.Command.AcknowledgeEvent",
+      "name": "OK"
+     },
+     {
+      "key": "BSH.Common.Command.PauseProgram",
+      "name": "Stop the programme"
+     }
+    ]
+   }
+  }
+ },
+ "program_details": {
+  "LaundryCare.Dryer.Program.Cotton": {
+   "status": 409,
+   "body": {
+    "error": {
+     "description": "Program currently not available",
+     "key": "SDK.Error.ProgramNotAvailable"
+    }
+   }
+  }
+ }
+}

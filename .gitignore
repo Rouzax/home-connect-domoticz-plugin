@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
 .claude/
 docs/superpowers/
@@ -12,3 +13,4 @@ _temp/
 CLAUDE.md
 todo.md
 .venv/
+tests/forbidden_literals.local.json

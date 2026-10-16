@@ -1,0 +1,638 @@
+{
+ "appliance": {
+  "brand": "Siemens",
+  "connected": true,
+  "enumber": "HCFIXTURE03/00",
+  "haId": "000000000000000003",
+  "name": "Dishwasher",
+  "type": "Dishwasher",
+  "vib": "HCFIXTURE03"
+ },
+ "status": {
+  "status": 409,
+  "body": {
+   "error": {
+    "description": "HomeAppliance did not respond to connection initialization requests in time, it might be offline",
+    "key": "SDK.Error.HomeAppliance.Connection.Initialization.Failed"
+   }
+  }
+ },
+ "settings": {
+  "status": 200,
+  "body": {
+   "data": {
+    "settings": [
+     {
+      "key": "BSH.Common.Setting.PowerState",
+      "value": "BSH.Common.EnumType.PowerState.Off",
+      "name": "Power status",
+      "displayvalue": "Off"
+     },
+     {
+      "key": "BSH.Common.Setting.AmbientLightEnabled",
+      "value": true,
+      "name": "Emotion Light"
+     },
+     {
+      "key": "BSH.Common.Setting.AmbientLightBrightness",
+      "value": 100,
+      "unit": "%",
+      "name": "Brightness"
+     },
+     {
+      "key": "BSH.Common.Setting.AmbientLightColor",
+      "value": "BSH.Common.EnumType.AmbientLightColor.Color40",
+      "name": "Colour and brightness",
+      "displayvalue": "cold white"
+     }
+    ]
+   }
+  }
+ },
+ "programs/available": {
+  "status": 200,
+  "body": {
+   "data": {
+    "active": {
+     "constraints": {
+      "access": "readWrite"
+     }
+    },
+    "programs": [
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.Intensiv70",
+      "name": "Intensive 70°"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.Auto2",
+      "name": "Auto 45-65°"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.Eco50",
+      "name": "Eco 50°"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.Quick45",
+      "name": "Speed 45°"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.PreRinse",
+      "name": "Pre-rinse"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.NightWash",
+      "name": "Silence 50"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.Kurz60",
+      "name": "Speed 60°"
+     },
+     {
+      "constraints": {
+       "execution": "selectandstart"
+      },
+      "key": "Dishcare.Dishwasher.Program.MachineCare",
+      "name": "Machine Care"
+     }
+    ],
+    "selected": {
+     "constraints": {
+      "access": "readWrite"
+     },
+     "key": "Dishcare.Dishwasher.Program.Intensiv70",
+     "name": "Intensive 70°",
+     "options": [
+      {
+       "key": "BSH.Common.Option.StartInRelative",
+       "value": 0,
+       "unit": "seconds",
+       "name": "Start time"
+      },
+      {
+       "key": "BSH.Common.Option.SmartEnergyService.SmartStartEnabled",
+       "value": false
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "value": false,
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "value": false,
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "value": false,
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "value": false,
+       "name": "Shine & Dry"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.SilenceOnDemand",
+       "value": false,
+       "name": "Quiet now"
+      },
+      {
+       "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+       "value": true,
+       "name": "Estimated remaining programme time"
+      },
+      {
+       "key": "BSH.Common.Option.EnergyForecast",
+       "value": 61,
+       "unit": "%",
+       "name": "Energy"
+      },
+      {
+       "key": "BSH.Common.Option.WaterForecast",
+       "value": 61,
+       "unit": "%",
+       "name": "Water"
+      }
+     ]
+    }
+   }
+  }
+ },
+ "programs/selected": {
+  "status": 200,
+  "body": {
+   "data": {
+    "constraints": {
+     "access": "readWrite"
+    },
+    "key": "Dishcare.Dishwasher.Program.Intensiv70",
+    "name": "Intensive 70°",
+    "options": [
+     {
+      "key": "BSH.Common.Option.StartInRelative",
+      "value": 0,
+      "unit": "seconds",
+      "name": "Start time"
+     },
+     {
+      "key": "BSH.Common.Option.SmartEnergyService.SmartStartEnabled",
+      "value": false
+     },
+     {
+      "key": "Dishcare.Dishwasher.Option.HygienePlus",
+      "value": false,
+      "name": "HygienePlus"
+     },
+     {
+      "key": "Dishcare.Dishwasher.Option.IntensivZone",
+      "value": false,
+      "name": "IntensiveZone"
+     },
+     {
+      "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+      "value": false,
+      "name": "VarioSpeedPlus"
+     },
+     {
+      "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+      "value": false,
+      "name": "Shine & Dry"
+     },
+     {
+      "key": "Dishcare.Dishwasher.Option.SilenceOnDemand",
+      "value": false,
+      "name": "Quiet now"
+     },
+     {
+      "key": "BSH.Common.Option.RemainingProgramTimeIsEstimated",
+      "value": true,
+      "name": "Estimated remaining programme time"
+     },
+     {
+      "key": "BSH.Common.Option.EnergyForecast",
+      "value": 61,
+      "unit": "%",
+      "name": "Energy"
+     },
+     {
+      "key": "BSH.Common.Option.WaterForecast",
+      "value": 61,
+      "unit": "%",
+      "name": "Water"
+     }
+    ]
+   }
+  }
+ },
+ "programs/active": {
+  "status": 404,
+  "body": {
+   "error": {
+    "description": "There is no program active",
+    "key": "SDK.Error.NoProgramActive"
+   }
+  }
+ },
+ "commands": {
+  "status": 200,
+  "body": {
+   "data": {
+    "commands": [
+     {
+      "key": "BSH.Common.Command.AcknowledgeEvent",
+      "name": "OK"
+     }
+    ]
+   }
+  }
+ },
+ "program_details": {
+  "Dishcare.Dishwasher.Program.Intensiv70": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.Intensiv70",
+     "name": "Intensive 70°",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.Auto2": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.Auto2",
+     "name": "Auto 45-65°",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.Eco50": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.Eco50",
+     "name": "Eco 50°",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.Quick45": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.Quick45",
+     "name": "Speed 45°",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.PreRinse": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.PreRinse",
+     "name": "Pre-rinse",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.NightWash": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.NightWash",
+     "name": "Silence 50",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.Kurz60": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.Kurz60",
+     "name": "Speed 60°",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.HygienePlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "HygienePlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.IntensivZone",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "IntensiveZone"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.VarioSpeedPlus",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "VarioSpeedPlus"
+      },
+      {
+       "key": "Dishcare.Dishwasher.Option.BrillianceDry",
+       "type": "Boolean",
+       "constraints": {
+        "default": false,
+        "liveupdate": true
+       },
+       "name": "Shine & Dry"
+      }
+     ]
+    }
+   }
+  },
+  "Dishcare.Dishwasher.Program.MachineCare": {
+   "status": 200,
+   "body": {
+    "data": {
+     "key": "Dishcare.Dishwasher.Program.MachineCare",
+     "name": "Machine Care",
+     "options": [
+      {
+       "name": "Start time",
+       "key": "BSH.Common.Option.StartInRelative",
+       "constraints": {
+        "min": 0,
+        "max": 86400,
+        "liveupdate": true
+       },
+       "unit": "seconds",
+       "type": "Int"
+      }
+     ]
+    }
+   }
+  }
+ }
+}
