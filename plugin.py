@@ -70,11 +70,11 @@ RETRY_LATER_S = 300.0
 RETRY_BACKOFF_FIRST_S = 60.0
 RETRY_BACKOFF_MAX_S = 3600.0
 REFUSED_RETRY_S = 60.0
-# Unit 1 says "(last known)" once the stream has been unhealthy this long. A fresh stream needs
-# workers.HEALTHY_AFTER_S connected plus a keep-alive (within workers.WATCHDOG_S) to prove itself,
-# after the first reconnect backoff (at most 1.2 * workers.BACKOFF_START_S), seen at the next
-# heartbeat; a shorter limit would flash "(last known)" after every healthy reconnect and write
-# two history rows for it (spec 6.2). A test pins this sum.
+# Unit 1 says "(last known)" once no stream has delivered an event for this long. A dropped
+# stream is live again after its first reconnect backoff (at most 1.2 * workers.BACKOFF_START_S)
+# plus its first event (replays arrive at once, a keep-alive within workers.WATCHDOG_S), seen at
+# the next heartbeat; the margin keeps a routine reconnect from flashing "(last known)" and
+# writing two history rows for it (spec 6.2).
 STREAM_STALE_AFTER_S = 400.0
 WORKER_RESTARTS_PER_HOUR = 3
 RESTART_WINDOW_S = 3600.0
@@ -220,7 +220,7 @@ class _PluginState:
         self.list_backoff = RETRY_BACKOFF_FIRST_S
         self.stream_started = False
         self.stream_dropped = False
-        self.unhealthy_since: float | None = None
+        self.not_live_since: float | None = None
         self.depaired: set[str] = set()
         # Presentation and logging.
         self.user_message = ""
@@ -494,8 +494,8 @@ def _start_stream_worker() -> None:
         worker.park()
     elif s.stream_started and s.tokens is not None:
         worker.set_token(s.tokens.access_token)
-    if s.unhealthy_since is None:
-        s.unhealthy_since = _mono()  # a fresh stream has yet to prove itself healthy
+    if s.not_live_since is None:
+        s.not_live_since = _mono()  # a fresh stream has delivered nothing yet
     s.stream = worker
 
 
@@ -752,7 +752,7 @@ def _apply_list(data: object, job: scheduler.Job) -> None:
         # The stream starts once the appliance list is known (spec 7.3 step 7).
         s.stream.set_token(s.tokens.access_token)
         s.stream_started = True
-        s.unhealthy_since = _mono()
+        s.not_live_since = _mono()
 
 
 def _handle_refused(message: workers.Refused) -> None:
@@ -823,12 +823,12 @@ def _handle_stream_state(message: workers.StreamState) -> None:
     s = _s()
     if message.connected:
         s.stream_token_fresh = False  # the stream accepted the current token
-    if message.healthy:
-        s.unhealthy_since = None
+    if message.healthy or message.live:
+        s.not_live_since = None
     elif not message.connected:
         s.stream_dropped = True
-        if s.unhealthy_since is None:
-            s.unhealthy_since = _mono()
+        if s.not_live_since is None:
+            s.not_live_since = _mono()
     elif s.stream_dropped:
         s.stream_dropped = False
         for job in s.sched.on_stream_reconnected(s.model):
@@ -995,12 +995,10 @@ def _account_view() -> planner.AccountView:
 
 
 def _stream_stale() -> bool:
-    """Unit 1 says "(last known)" once the stream has been unhealthy for STREAM_STALE_AFTER_S:
-    longer than a dropped stream needs to wait out its first reconnect backoff, stay connected
-    HEALTHY_AFTER_S, see the next keep-alive within the watchdog window and be noticed at the
-    next heartbeat (spec 6.2, 7.7). A stream that keeps connecting and dropping never proves
-    healthy, so it goes stale."""
-    since = _s().unhealthy_since
+    """Unit 1 says "(last known)" once no live stream has been seen for STREAM_STALE_AFTER_S
+    (spec 6.2, 7.7). A connection that drops before its first event never counts as live, so a
+    stream that keeps failing that way goes stale."""
+    since = _s().not_live_since
     return since is not None and _mono() - since > STREAM_STALE_AFTER_S
 
 

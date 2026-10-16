@@ -745,6 +745,14 @@ def test_a_stream_is_healthy_after_five_minutes_with_a_keepalive():
     assert delay < 640.0  # reset to the start; without the reset it would be 1280 or more
 
 
+def test_the_first_event_of_a_connection_marks_the_stream_live_once():
+    status = [b"event:EVENT\n", b'data:{"items":[]}\n', b"\n"]
+    states, _ = _run_clocked_stream(status * 3)
+    live = [s for s in states if s.live]
+    assert len(live) == 1
+    assert live[0].connected and not live[0].healthy
+
+
 def test_replayed_events_without_a_keepalive_never_make_a_stream_healthy():
     status = [b"event:EVENT\n", b'data:{"items":[]}\n', b"\n"]
     states, delay = _run_clocked_stream(status * 7)  # 420 s connected

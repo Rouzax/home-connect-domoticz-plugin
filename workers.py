@@ -75,6 +75,9 @@ class StreamState:
     connected: bool
     healthy: bool
     reason: str
+    # The connection delivered its first event, so the data is current again; healthy, which
+    # resets the backoff, takes much longer to prove (see _read).
+    live: bool = False
 
 
 @dataclass(frozen=True)
@@ -605,7 +608,7 @@ class StreamWorker(_Worker):
                     return
 
         threading.Thread(target=watchdog, name="hc-stream-watchdog", daemon=True).start()
-        keepalives, healthy, reason = 0, False, "closed"
+        keepalives, live, healthy, reason = 0, False, False, "closed"
         parser = sse.Parser()
         try:
             while not self._stopping.is_set():
@@ -620,6 +623,9 @@ class StreamWorker(_Worker):
                         break
                     continue
                 last_event[0] = now
+                if not live:
+                    live = True
+                    self._post(StreamState(self.generation, True, False, "live", live=True))
                 if event.type == "KEEP-ALIVE":
                     keepalives += 1
                 else:

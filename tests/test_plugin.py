@@ -166,9 +166,9 @@ def event(made, kind, data="", ha=HA):
     fakes.push(stream, workers.StreamEvent(stream.generation, sse.Event(kind, data, ha)))
 
 
-def stream_state(made, connected, healthy=False):
+def stream_state(made, connected, healthy=False, live=False):
     stream = made["stream"]
-    fakes.push(stream, workers.StreamState(stream.generation, connected, healthy, "x"))
+    fakes.push(stream, workers.StreamState(stream.generation, connected, healthy, "x", live))
 
 
 def log_text(domoticz):
@@ -1071,6 +1071,26 @@ def test_healthy_reconnect_never_flashes_last_known(run, domoticz, clock):
     assert unit.sValue == "Running"
 
 
+def test_last_known_clears_on_the_first_event_after_a_reconnect(run, domoticz, clock):
+    made = run()
+    authorize(made)
+    discover(made)
+    answer(made, "status", body=status_body())
+    unit = domoticz.Devices[HA].Units[planner.UNIT_STATE]
+    stream_state(made, True, live=True)
+    stream_state(made, False)
+    plugin.onHeartbeat()
+    clock.offset += plugin.STREAM_STALE_AFTER_S + 1
+    plugin.onHeartbeat()
+    assert unit.sValue == "Running (last known)"
+    stream_state(made, True)
+    plugin.onHeartbeat()
+    assert unit.sValue == "Running (last known)"  # connected, but nothing received yet
+    stream_state(made, True, live=True)
+    plugin.onHeartbeat()
+    assert unit.sValue == "Running"
+
+
 def test_stream_that_never_proves_healthy_goes_stale(run, domoticz, clock):
     made = run()
     authorize(made)
@@ -1089,10 +1109,10 @@ def test_restarted_stream_must_prove_itself(run):
     discover(made)
     stream_state(made, True, healthy=True)
     plugin.onHeartbeat()
-    assert plugin._s().unhealthy_since is None
+    assert plugin._s().not_live_since is None
     made["stream"].state = "crashed"
     plugin.onHeartbeat()
-    assert plugin._s().unhealthy_since is not None
+    assert plugin._s().not_live_since is not None
 
 
 def stream_refreshed(made):
