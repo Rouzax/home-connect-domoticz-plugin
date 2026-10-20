@@ -3,23 +3,39 @@
 <plugin key="homeconnect" name="Home Connect" author="Rouzax" version="0.1.0" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
-        <p>Bosch, Siemens, Neff and Gaggenau appliances through the Home Connect cloud. This version monitors; it does not control appliances yet.</p>
-        <p>Register a Device Flow application at developer.home-connect.com while logged in with the same email as your Home Connect app account, then enter its Client ID below. After saving, the authorization link and code appear in the Domoticz log and on the Home Connect device.</p>
+        <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
+        <h3>Sign in</h3>
+        <ol>
+            <li>At developer.home-connect.com, log in with the same email as your Home Connect app and register an application of type Device Flow.</li>
+            <li>Enter its Client ID below and press Add or Update.</li>
+            <li>Open the "Home Connect" device on the Utility tab, follow its link and approve with your Home Connect account. The link and code are also in the Domoticz log.</li>
+        </ol>
+        <p>The "Home Connect" device is shown while sign-in is needed and hidden once you are signed in; you then find it under Setup &gt; Devices.</p>
         <p><b>The client secret and the Home Connect tokens are stored in cleartext in the Domoticz database. Treat database backups as secrets.</b></p>
     </description>
     <params>
-        <param field="Username" label="Client ID" width="320px" required="true"/>
-        <param field="Password" label="Client Secret" width="320px" password="true"/>
-        <param field="AllowControl" type="boolean" label="Allow control" default="false"/>
+        <param field="Username" label="Client ID" width="320px" required="true">
+            <description>The Client ID of your application on the Home Connect developer portal (developer.home-connect.com).</description>
+        </param>
+        <param field="Password" label="Client Secret" width="320px" password="true">
+            <description>Leave empty: a Device Flow application needs no secret. Fill it in only if your application shows one.</description>
+        </param>
+        <param field="AllowControl" type="boolean" label="Allow control" default="false">
+            <description>Lets Domoticz, including scenes, timers and scripts, choose programs, change settings and start or stop appliances. A script or a misclick can then start a program; an appliance only accepts a start while remote start is switched on at the appliance itself.</description>
+        </param>
         <param field="DeviceLanguage" label="Device language" width="160px">
+            <description>Language of device names and values. Names you changed yourself are kept; descriptions keep the language they were created in.</description>
             <options>
                 <option label="Same as Domoticz" value="auto" default="true"/>
                 <option label="English" value="en"/>
                 <option label="Nederlands" value="nl"/>
             </options>
         </param>
-        <param field="SignOut" type="boolean" label="Sign out" default="false"/>
+        <param field="SignOut" type="boolean" label="Sign out" default="false">
+            <description>Turn on and press Update to sign out: the plugin withdraws its access at Home Connect and stays signed out. To sign in again, turn it off and press Update.</description>
+        </param>
         <param field="DebugLevel" label="Debug level" width="160px">
+            <description>None for normal use. Basic logs every request; Verbose also logs every message from Home Connect and fills the log quickly.</description>
             <options>
                 <option label="None" value="0" default="true"/>
                 <option label="Basic" value="1"/>
@@ -46,7 +62,10 @@ import DomoticzEx as Domoticz
 if TYPE_CHECKING:
     import auth
     import budget
+    import catalog
     import config
+    import control
+    import coordinator
     import domoticz_api
     import errors
     import hc_client
@@ -54,12 +73,18 @@ if TYPE_CHECKING:
     import persistence
     import planner
     import scheduler
+    import sse
     import text
     import workers
 
 MIN_PYTHON = (3, 11)
 HEARTBEAT_S = 5
+# While commands are pending the heartbeat runs every second: an appliance's writes go one at a
+# time and answers are read only on a heartbeat, so a scene of several writes would otherwise
+# approach the 30 s command TTL.
+FAST_HEARTBEAT_S = 1
 SHUTDOWN_DEADLINE_S = 6.0
+VERBOSE_FIELD_CAP = 2000
 DRAIN_LIMIT = 500
 DAILY_CHECK_EVERY = 60
 # Retries of the discovery listing, the device-code request (both from RETRY_BACKOFF_FIRST_S) and
@@ -87,38 +112,6 @@ _MESSAGE_MAX = 150
 # by something else must not enter the redactor, which would blank that text in every log line.
 _MIN_SEEDED_ID_LEN = 12
 
-# Plugin notes on the account Text device, (English, Dutch).
-# Each note becomes one bullet on the account card, a small tile: keep them short.
-_NOTES = {
-    "workers_down": (
-        "Workers stopped; retrying hourly",
-        "Achtergrondprocessen gestopt; elk uur opnieuw",
-    ),
-    "background_exhausted": (
-        "Background budget used up; events continue",
-        "Achtergrondbudget op; events gaan door",
-    ),
-    "total_exhausted": (
-        "API budget used up; updates resume later",
-        "API-budget op; updates volgen later",
-    ),
-    "auth_exhausted": (
-        "Authorization budget used up; try later",
-        "Autorisatiebudget op; probeer later",
-    ),
-    "denied": ("Authorization denied", "Autorisatie geweigerd"),
-    "flow_failed": ("Failed ({reason})", "Mislukt ({reason})"),
-    "client_rejected": (
-        "Client ID or Secret refused; check settings",
-        "Client ID of Secret geweigerd; controleer instellingen",
-    ),
-    "refresh_refused": ("Renewal refused ({reason})", "Verlenging geweigerd ({reason})"),
-    "start_failed": (
-        "Start failed: {reason}; check the Client ID",
-        "Start mislukt: {reason}; controleer de Client ID",
-    ),
-}
-
 # Indirection so tests can move the plugin's own timers forward.
 _mono = time.monotonic
 _wall = time.time
@@ -133,11 +126,14 @@ def _python_ok(version=sys.version_info) -> bool:
 def _load_modules() -> None:
     """Project modules use 3.11 syntax and APIs, so they are imported only after the version
     check; a top-level import would fail before onStart could explain why."""
-    global auth, budget, config, domoticz_api, errors, hc_client, model, persistence, planner
-    global scheduler, text, workers
+    global auth, budget, catalog, config, control, coordinator, domoticz_api, errors, hc_client
+    global model, persistence, planner, scheduler, sse, text, workers
     import auth
     import budget
+    import catalog
     import config
+    import control
+    import coordinator
     import domoticz_api
     import errors
     import hc_client
@@ -145,6 +141,7 @@ def _load_modules() -> None:
     import persistence
     import planner
     import scheduler
+    import sse
     import text
     import workers
 
@@ -167,7 +164,10 @@ def _new_stream_worker(client, budget_, results, generation, lang) -> workers.St
 
 def _devices() -> dict:
     # Domoticz injects Devices and Parameters into this module's globals.
-    return globals().get("Devices") or {}
+    # An empty table is still the live one: a fresh hardware entry injects {}, and falling back on
+    # falsiness would make every unit creation look like a failure.
+    devices = globals().get("Devices")
+    return devices if devices is not None else {}
 
 
 def _parameters() -> dict:
@@ -239,6 +239,10 @@ class _PluginState:
         self.slow_restarts = False
         self.workers_down = False
         self.beat = 0
+        # Control (spec 7.6).
+        self.coord = coordinator.Coordinator(cfg.language, _label)
+        self.op_states: dict[str, str] = {}
+        self.heartbeat_s = HEARTBEAT_S
 
     def remember(self, *values: str) -> None:
         self.secrets.update(v for v in values if v)
@@ -266,12 +270,12 @@ def _redact(line: str) -> str:
     return line
 
 
-def _field(value: object) -> str:
+def _field(value: object, max_len: int) -> str:
     if isinstance(value, int | float) and not isinstance(value, bool):
         return str(value)
     # Redacted before log_value cuts it to length: a secret straddling the cut would otherwise
     # leave its prefix behind, which the whole-line pass can no longer recognise.
-    return text.log_value(_redact(str(value)))
+    return text.log_value(_redact(str(value)), max_len)
 
 
 def _write_log(level: str, line: str) -> None:
@@ -283,13 +287,15 @@ def _emit(level: str, event: str, **fields: object) -> None:
     and exception text included, passes the redactor."""
     s = _state
     debug_level = s.cfg.debug_level if s is not None else 0
+    # Verbose exists to show payloads, so its values get a longer cap than the operator lines.
+    max_len = VERBOSE_FIELD_CAP if level == "verbose" else 200
     if level == "verbose":
         if debug_level < 2:
             return
         level = "debug"
     elif level == "debug" and debug_level < 1:
         return
-    _write_log(level, " ".join([event, *(f"{k}={_field(v)}" for k, v in fields.items())]))
+    _write_log(level, " ".join([event, *(f"{k}={_field(v, max_len)}" for k, v in fields.items())]))
 
 
 def _emit_once(key: str, level: str, event: str, **fields: object) -> None:
@@ -306,8 +312,7 @@ def _label(ha_id: str) -> str:
 
 
 def _note(name: str, **values: str) -> str:
-    english, dutch = _NOTES[name]
-    return (dutch if _s().cfg.language == "nl" else english).format(**values)
+    return catalog.note(name, _s().cfg.language, **values)
 
 
 # -- auth ---------------------------------------------------------------------------------------
@@ -329,6 +334,7 @@ def _submit(job: scheduler.Job) -> bool:
         _emit("status", "auth_request_not_queued", kind=job.kind, detail="retrying later")
     else:
         _emit("debug", "job_not_queued", kind=job.kind)
+        _notes(s.coord.drop([job], _mono(), "queue_full"))
     return False
 
 
@@ -443,6 +449,7 @@ def _grant(tokens: persistence.Tokens) -> None:
     s.refresh_in_flight = s.refresh_wanted = s.stream_token_fresh = False
     s.refresh_next = 0.0
     s.refresh_backoff = RETRY_LATER_S
+    _notes(s.coord.drop(s.after_refresh, _mono(), "stale"))
     s.after_refresh.clear()
     s.refresh_retried.clear()
     _tokens_changed(tokens)
@@ -450,18 +457,23 @@ def _grant(tokens: persistence.Tokens) -> None:
     s.req.unpark()
     s.stream.unpark()
     s.latched.discard("authorization_lost")
-    _emit("status", "authorized")
+    _emit("status", "signed_in")
     _discover()
 
 
-def _lose_authorization(new_state: auth.AuthState, reason: str) -> None:
+def _lose_authorization(
+    new_state: auth.AuthState, reason: str, refused: scheduler.Job | None = None
+) -> None:
     s = _s()
     _set_auth(new_state)
     _park_all()
+    # Writes answered 401 (held for a refreshed token, or `refused`) were never executed.
+    unsent = [*s.after_refresh, refused]
     s.refresh_wanted = s.stream_token_fresh = False
     s.after_refresh.clear()
     s.refresh_retried.clear()
     _emit_once("authorization_lost", "error", "authorization_lost", reason=reason)
+    _notes(s.coord.abandon(_mono(), unsent=unsent))
 
 
 # -- workers ------------------------------------------------------------------------------------
@@ -575,7 +587,7 @@ def _handle_device_code(r: workers.Result) -> None:
         s.user_message = ""
         _set_auth(auth.AuthState.AWAITING_USER)
     until = planner.clock(code.expires_at)
-    _emit("status", "authorize", link=code.link, code=code.user_code, valid_until=until)
+    _emit("status", "sign_in_needed", link=code.link, code=code.user_code, valid_until=until)
 
 
 def _handle_poll(r: workers.Result) -> None:
@@ -604,7 +616,7 @@ def _handle_poll(r: workers.Result) -> None:
             s.flow = flow = replace(flow, interval=flow.interval + 5)
         s.next_poll = _mono() + flow.interval
         return
-    _emit("status", "authorization_ended", outcome=outcome, reason=code)
+    _emit("status", "sign_in_ended", outcome=outcome, reason=code)
     if outcome == "denied":
         _end_flow(_note("denied"))
     elif outcome == "error":
@@ -681,22 +693,39 @@ def _signature(job: scheduler.Job) -> tuple:
     return (job.kind, job.ha_id, job.key, job.issued_seq)
 
 
+def _refresh_and_retry(job: scheduler.Job) -> None:
+    """A 401: one forced refresh, then the job once more; a second 401 for the same job means
+    the new token is refused too (spec 7.1)."""
+    s = _s()
+    if s.auth_state != auth.AuthState.AUTHORIZED:
+        return
+    if _signature(job) in s.refresh_retried:
+        _lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_token", job)
+        return
+    s.refresh_retried.add(_signature(job))
+    # A 401 means a write was not executed, so sending it again is no retry (spec 7.6); if the
+    # refresh fails, abandon reports it as not sent (cancelled), not unconfirmed.
+    if len(s.after_refresh) < AWAITING_TOKEN_MAX:
+        s.after_refresh.append(replace(job, retried=True))
+    else:
+        _notes(s.coord.drop([job], _mono(), "queue_full"))
+    _request_refresh()
+
+
+def _answered(r: workers.Result) -> bool:
+    """False when a 401 sent the job round a token refresh: that answer says nothing yet."""
+    if r.status == 401:
+        _refresh_and_retry(r.job)
+        return False
+    _s().refresh_retried.discard(_signature(r.job))
+    return True
+
+
 def _handle_api(r: workers.Result) -> None:
     s = _s()
     job, m = r.job, s.model
-    if r.status == 401:
-        if s.auth_state != auth.AuthState.AUTHORIZED:
-            return
-        if _signature(job) in s.refresh_retried:
-            # Already resent after a forced refresh: the new token is refused too (spec 7.1).
-            _lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_token")
-            return
-        s.refresh_retried.add(_signature(job))
-        if len(s.after_refresh) < AWAITING_TOKEN_MAX:
-            s.after_refresh.append(replace(job, retried=True))
-        _request_refresh()
+    if not _answered(r):
         return
-    s.refresh_retried.discard(_signature(job))
     if r.category == errors.FORBIDDEN:
         _emit_once(
             f"forbidden:{job.kind}:{job.ha_id}",
@@ -755,6 +784,31 @@ def _apply_list(data: object, job: scheduler.Job) -> None:
         s.not_live_since = _mono()
 
 
+def _handle_command(r: workers.Result) -> None:
+    s = _s()
+    if not _answered(r):
+        return
+    if r.category == errors.OFFLINE:
+        s.model.set_offline(r.job.ha_id)
+    description = errors.parse_api_error(r.status, r.body).description if r.status >= 400 else ""
+    app = s.model.appliances.get(r.job.ha_id)
+    job, status, key = r.job, r.status, r.error_key
+    _notes(s.coord.on_answer(job.command_id, status, r.category, key, description, _mono(), app))
+    _dispatch_writes()
+
+
+def _handle_verify(r: workers.Result) -> None:
+    """A reconciliation GET: applied to the model like any answer (an old one can never roll
+    back a newer event, spec 4.3), then it settles its write. No follow-up fetches."""
+    s = _s()
+    if not _answered(r):
+        return
+    job = r.job
+    data = errors.parse_json(r.body) if r.status == 200 else None
+    s.model.apply_answer(job.key, job.ha_id, r.status, data, issued=job.issued_seq)
+    _notes(s.coord.on_verified(job.command_id, s.model.appliances.get(job.ha_id), _mono()))
+
+
 def _handle_refused(message: workers.Refused) -> None:
     s = _s()
     job, reason = message.job, message.reason
@@ -765,7 +819,7 @@ def _handle_refused(message: workers.Refused) -> None:
         else:
             s.poll_in_flight = False
         if reason in ("ceiling", "total"):
-            _emit("status", "authorization_stopped", reason="daily authorization budget used up")
+            _emit("status", "sign_in_stopped", reason="daily sign-in budget used up")
             _end_flow(_note("auth_exhausted"))
         elif job.kind == "device_code":
             _retry_device_code_later()
@@ -777,12 +831,19 @@ def _handle_refused(message: workers.Refused) -> None:
         s.refresh_next = mono + REFUSED_RETRY_S
     elif job.kind == "revoke":
         _revoke_done(True, refused=reason)
+    elif job.kind in ("command", "verify") and not (
+        reason == "no_token" and s.auth_state == auth.AuthState.AUTHORIZED
+    ):
+        app = s.model.appliances.get(job.ha_id)
+        _notes(s.coord.on_refused(job.command_id, reason, app, mono, message.wait_s))
     elif reason == "no_token" and s.auth_state == auth.AuthState.AUTHORIZED:
         # The worker dropped a token Home Connect refused. Jobs it turned away wait for the
         # refreshed one; once that has arrived they go straight back.
         if s.refresh_wanted or s.refresh_in_flight:
             if len(s.after_refresh) < AWAITING_TOKEN_MAX:
                 s.after_refresh.append(job)
+            else:
+                _notes(s.coord.drop([job], mono, "queue_full"))
         else:
             _submit(job)
     elif job.kind == "list":
@@ -799,7 +860,10 @@ def _handle_event(message: workers.StreamEvent) -> None:
     ha = effect.ha_id
     if ha is not None:
         s.ha_ids.add(ha)
-    _emit("verbose", "event", type=raw.type, data=raw.data)
+    if s.cfg.debug_level >= 2:  # parsing the items again costs nothing below Verbose
+        where = {"appliance": _label(ha)} if ha is not None else {}
+        for fields in sse.log_fields(raw):
+            _emit("verbose", "event", type=raw.type, **where, **fields)
     if ha is not None and ha in s.model.appliances:
         if effect.kind == "depaired":
             s.depaired.add(ha)
@@ -845,6 +909,8 @@ def _handle(message: object) -> None:
             "token_poll": _handle_poll,
             "refresh": _handle_refresh,
             "revoke": _handle_revoke,
+            "command": _handle_command,
+            "verify": _handle_verify,
         }
         handlers.get(message.job.kind, _handle_api)(message)
     elif isinstance(message, workers.StreamEvent):
@@ -930,7 +996,8 @@ def _auth_timers() -> None:
     flow = s.flow
     if flow is not None:
         if now >= flow.expires_at:
-            _emit("status", "authorization_code_expired")
+            detail = "choose Sign in again on the Home Connect actions device"
+            _emit("status", "sign_in_code_expired", detail=detail)
             _end_flow()
         elif mono >= s.next_poll and not s.poll_in_flight:
             _poll()
@@ -970,9 +1037,7 @@ def _budget_notes() -> list[str]:
     snapshot = s.budget.snapshot
     if snapshot.total_used >= budget.TOTAL:
         return [_note("total_exhausted")]
-    if budget.BACKGROUND in snapshot.exhausted:
-        return [_note("background_exhausted")]
-    return []
+    return [_note("background_exhausted")] if budget.BACKGROUND in snapshot.exhausted else []
 
 
 def _account_view() -> planner.AccountView:
@@ -1013,19 +1078,29 @@ def _write_devices() -> None:
         if app.ha_id in s.depaired:
             continue  # stops updating; its devices stay (spec 7.4)
         label = s.labels[app.ha_id]
-        updates += planner.plan_appliance(app, s.state, s.cfg.language, now, stale, label, warnings)
-    updates += planner.plan_account(_account_view(), s.cfg.language)
-    domoticz_api.apply_updates(_devices(), updates, s.state)
-    for warning in warnings:
-        if warning not in s.warned:
-            s.warned.add(warning)
-            _write_log("status", warning)
+        updates += planner.plan_appliance(
+            app,
+            s.state,
+            s.cfg.language,
+            now,
+            stale,
+            label,
+            warnings,
+            allow_control=s.cfg.allow_control,
+            blocked=s.blocked_selectors,
+        )
     needs_user = (
         s.auth_state != auth.AuthState.AUTHORIZED
         or s.flow is not None
         or s.workers_down
         or bool(_budget_notes())
     )
+    updates += planner.plan_account(_account_view(), s.cfg.language, needs_user)
+    updates = planner.apply_overlay(updates, s.coord.overlay())
+    domoticz_api.apply_updates(_devices(), updates, s.state)
+    for warning in (w for w in warnings if w not in s.warned):
+        s.warned.add(warning)
+        _write_log("status", warning)
     # Once per transition, so a user's own hide or show survives until the next one (spec 6.1).
     if needs_user != s.state.account_shown:
         units = [planner.ACCOUNT_TEXT, planner.ACCOUNT_ACTIONS]
@@ -1039,26 +1114,129 @@ def _export_budget() -> None:
 
 
 def _export_names() -> None:
-    """Copy the model's Home Connect names into the persisted caches. An entry mentioning a haId
-    (a user can type anything into a name) stays out of the snapshot."""
     s = _s()
-    ha_ids = s.ha_ids | set(s.model.appliances)
+    model.cache_names(s.model.appliances.values(), s.ha_ids | set(s.model.appliances))
 
-    def clean(names: dict[str, str]) -> dict[str, str]:
-        return {k: v for k, v in names.items() if not any(h in k or h in v for h in ha_ids)}
 
-    for app in s.model.appliances.values():
-        app.cache.names = clean(app.names)
-        app.cache.value_names = clean(app.value_names)
+# -- control ------------------------------------------------------------------------------------
+
+
+def _notes(notes: list[coordinator.Note]) -> None:
+    s = _s()
+    for note in notes:
+        _emit(note.level, note.event, appliance=_label(note.ha_id), **note.fields)
+        app = s.model.appliances.get(note.ha_id)
+        # A delayed-start move is held only once Home Connect confirmed it (spec 6.3), and only
+        # while the program still waits: a time held after it started would apply to the next.
+        if note.hold is not None and app and app.operation_state() == "DelayedStart":
+            s.state.delayed_start[note.ha_id] = note.hold
+
+
+def _control_context(ha: str) -> control.Context:
+    s = _s()
+    program, start_waiting, start_sent = s.coord.pending(ha)
+    return control.Context(
+        app=s.model.appliances.get(ha),
+        state=s.state,
+        label=_label(ha),
+        lang=s.cfg.language,
+        allow_control=s.cfg.allow_control,
+        authorized=s.auth_state == auth.AuthState.AUTHORIZED,
+        snapshot=s.budget.snapshot,
+        mono=_mono(),
+        wall=_wall(),
+        pending_program=program,
+        pending_start=start_waiting,
+        sent_start=start_sent,
+        pending_keys=s.coord.pending_keys(ha),
+    )
+
+
+def _appliance_command(ha: str, unit: int, command: str, level: object) -> None:
+    """One onCommand on an appliance unit. DeviceID is a haId, so it is never logged."""
+    s = _s()
+    # With control off, decide() refuses everything with the control-off message first.
+    if s.cfg.allow_control and (ha, unit) in s.blocked_selectors:
+        decision = control.Refusal(control.message("unmapped", s.cfg.language))
+    else:
+        decision = control.decide(ha, unit, command, level, _control_context(ha))
+    if isinstance(decision, control.Refusal):
+        device, reason = domoticz_api.unit_name(_devices(), ha, unit), decision.reason
+        _emit(decision.level, decision.event, appliance=_label(ha), device=device, reason=reason)
+        return
+    hold = None
+    if isinstance(decision, control.Hold):
+        _emit("status", "delayed_start", appliance=_label(ha), detail=decision.note)
+        if decision.intent is None:
+            if decision.minutes is None:
+                s.state.delayed_start.pop(ha, None)
+            else:
+                s.state.delayed_start[ha] = decision.minutes
+            return
+        # A move of a waiting delayed start: held once confirmed, through its Note.
+        intent, hold = decision.intent, decision.minutes
+    else:
+        intent = decision
+    if intent.note:
+        _emit("status", "command_adjusted", appliance=_label(ha), detail=intent.note)
+    _notes(s.coord.submit(intent, _mono(), hold=hold))
+    _dispatch_writes()
+
+
+def _dispatch_writes() -> None:
+    """Hand the coordinator's next writes to the request worker. A Start is rebuilt here, so it
+    carries what was observed after the writes before it and a delay counted from now."""
+    s = _s()
+    mono = _mono()
+    writes, notes = s.coord.dispatch(mono)
+    _notes(notes)
+    for write in writes:
+        intent = write.intent
+        if intent.action == "start":
+            ha, lang = intent.ha_id, s.cfg.language
+            app, held = s.model.appliances.get(ha), s.state.delayed_start.get(ha)
+            built = control.build_start(app, held, _wall(), lang, _label(ha))
+            if isinstance(built, control.Refusal):
+                _notes(s.coord.unsent(write, mono, built.reason))
+                continue
+            request, note = built
+            if note:
+                _emit("status", "command_adjusted", appliance=_label(intent.ha_id), detail=note)
+            intent = replace(intent, request=request)
+        # The TTL runs from the moment the command was given, not from its dispatch (spec 7.6).
+        deadline = write.created + control.COMMAND_TTL_S
+        job = control.write_job(write.id, intent, s.model.tick(), deadline)
+        s.coord.sent(write, job.issued_seq)
+        _submit(job)  # one that cannot be queued is reported there
+
+
+def _control_tick() -> None:
+    s = _s()
+    mono = _mono()
+    notes, verify = s.coord.tick(s.model.appliances, mono)
+    _notes(notes)
+    for write in verify:
+        job = control.verify_job(
+            write.id, write.intent, s.model.tick(), mono + control.COMMAND_TTL_S
+        )
+        if not _submit(job):
+            app = s.model.appliances.get(write.intent.ha_id)
+            _notes(s.coord.on_refused(write.id, "queue_full", app, mono))
+    _dispatch_writes()
+    apps = s.model.appliances.values()
+    for ha in control.spent_delays(s.op_states, apps, s.state.delayed_start):
+        _emit("debug", "delayed_start_spent", appliance=_label(ha))
+
+
+def _pace_heartbeat() -> None:
+    s = _s()
+    wanted = FAST_HEARTBEAT_S if s.coord.busy() else HEARTBEAT_S
+    if wanted != s.heartbeat_s:
+        s.heartbeat_s = wanted
+        domoticz_api.heartbeat(wanted)
 
 
 # -- start --------------------------------------------------------------------------------------
-
-
-def _unit_name(device_id: str, number: int) -> str:
-    dev = _devices().get(device_id)
-    unit = dev.Units.get(number) if dev is not None else None
-    return str(unit.Name) if unit is not None else f"unit {number}"
 
 
 def _start() -> None:
@@ -1102,9 +1280,19 @@ def _start() -> None:
         _emit(
             "error",
             "selector_unmapped",
-            device=_unit_name(device_id, number),
+            device=domoticz_api.unit_name(_devices(), device_id, number),
             detail="commands to it are refused until a backup is restored or it is deleted",
         )
+    if cfg.allow_control != saved.control_shown:
+        # Once per transition, so a user's own hide or show survives until the next (spec
+        # 6.4). The plugin restarts whenever a hardware setting changes, so this is the only
+        # place AllowControl can change.
+        for device_id in list(_devices()):
+            if device_id != planner.ACCOUNT_DEVICE:
+                domoticz_api.set_used(
+                    _devices(), device_id, planner.CONTROL_ONLY_UNITS, cfg.allow_control
+                )
+        saved.control_shown = cfg.allow_control
     if auth.issued_to_another_client(saved.tokens, s.id_hash):
         _emit(
             "status",
@@ -1137,7 +1325,7 @@ def _start() -> None:
         s.saver = domoticz_api.StateSaver(saved)
     else:
         s.saver.after_token_change()
-    _emit("status", "started", state=state.value)
+    _emit("status", "started", account=catalog.sign_in_state(state.value))
 
 
 # -- Domoticz callbacks -------------------------------------------------------------------------
@@ -1175,17 +1363,29 @@ def _stop_workers(s: _PluginState) -> list[str]:
     return [w.name for w in started if w.is_alive()]
 
 
+def _finish_stop(s: _PluginState) -> None:
+    alive = _stop_workers(s)
+    if alive:
+        _emit("error", "worker_still_running", workers=",".join(alive))
+    _export_budget()
+    _export_names()
+    s.saver.on_stop()
+
+
 def onStop():
     s = _state
     if s is None or s.disabled:
         return
     try:
-        alive = _stop_workers(s)
-        if alive:
-            _emit("error", "worker_still_running", workers=",".join(alive))
-        _export_budget()
-        _export_names()
-        s.saver.on_stop()
+        # Before the workers stop: queued writes are never sent and handed-over ones may have
+        # run (spec 4.3), so each is reported now. The devices are written again so commanded
+        # values give way to the appliance's. Own guard: a failure must not keep workers running.
+        _notes(s.coord.abandon(_mono(), "stopping"))
+        _write_devices()
+    except Exception as exc:
+        Domoticz.Error(f"Home Connect: stop failed ({type(exc).__name__})")
+    try:
+        _finish_stop(s)
     except Exception as exc:
         Domoticz.Error(f"Home Connect: stop failed ({type(exc).__name__})")
 
@@ -1202,12 +1402,14 @@ def onHeartbeat():
         _send_revokes()
         _auth_timers()
         _scheduled_work()
+        _control_tick()
         _supervise()
         _export_budget()
         _watch_block()
         _write_devices()
         _export_names()
         s.saver.on_heartbeat()
+        _pace_heartbeat()
     except Exception as exc:
         Domoticz.Error(f"Home Connect: heartbeat failed ({type(exc).__name__})")
 
@@ -1220,13 +1422,9 @@ def onCommand(DeviceID, Unit, Command, Level, Color):
         if DeviceID == planner.ACCOUNT_DEVICE and Unit == planner.ACCOUNT_ACTIONS:
             _account_action(int(Level or 0))
             return
-        # This version writes nothing to any appliance; DeviceID is a haId, so it is never logged.
-        appliance = _label(str(DeviceID))
-        if (DeviceID, Unit) in s.blocked_selectors:
-            reason = "selector levels unknown; restore a backup or delete the device"
-        else:
-            reason = "control arrives in a later version of this plugin"
-        _emit("status", "command_refused", appliance=appliance, unit=Unit, reason=reason)
+        _appliance_command(str(DeviceID), int(Unit), str(Command), Level)
+        _write_devices()  # a commanded value shows at once, as a request (spec 7.6)
+        _pace_heartbeat()
     except Exception as exc:
         Domoticz.Error(f"Home Connect: command failed ({type(exc).__name__})")
 
@@ -1248,4 +1446,4 @@ def _account_action(level: int) -> None:
         if s.auth_state == auth.AuthState.AUTHORIZED:
             _discover()
         else:
-            _emit("status", "refresh_refused", detail="not authorized")
+            _emit("status", "refresh_appliances_refused", detail="not signed in")

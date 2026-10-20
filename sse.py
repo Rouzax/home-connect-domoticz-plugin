@@ -5,6 +5,7 @@ caller reads with a limit of MAX_LINE + 1 bytes, so a line longer than MAX_LINE 
 rather than silently split into two fields.
 """
 
+import json
 from dataclasses import dataclass
 
 import errors
@@ -73,3 +74,21 @@ def items(event: Event) -> list[dict]:
     payload = errors.parse_json(event.data.encode("utf-8"))
     found = payload.get("items") if isinstance(payload, dict) else None
     return [i for i in found if isinstance(i, dict)] if isinstance(found, list) else []
+
+
+def log_fields(event: Event) -> list[dict[str, object]]:
+    """Verbose log fields, one dict per item: the key, the whole value (a structure as JSON) and
+    the unit and display value when present. The raw payload is mostly per-item noise (uri,
+    timestamp, handling), which pushed the value past the log cap. An event without items gives
+    one empty dict, so it still logs once."""
+    out: list[dict[str, object]] = []
+    for item in items(event):
+        value = item.get("value")
+        plain = isinstance(value, str | int | float) and not isinstance(value, bool)
+        fields: dict[str, object] = {"key": item.get("key", "")}
+        fields["value"] = value if plain else json.dumps(value, ensure_ascii=False)
+        for name, label in (("unit", "unit"), ("displayvalue", "display")):
+            if name in item:
+                fields[label] = item[name]
+        out.append(fields)
+    return out or [{}]

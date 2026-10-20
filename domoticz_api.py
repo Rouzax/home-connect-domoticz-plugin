@@ -129,6 +129,8 @@ def _create(devices, update: planner.DeviceUpdate):
         Used=update.used,
         # Creation only: a later update never sends Image, so an icon the user picks is kept.
         Image=update.image,
+        # Creation only as well: a description the user edits is kept.
+        Description=update.description,
     )
     new_unit.Create()
     dev = devices.get(update.device_id)
@@ -178,6 +180,13 @@ def apply_updates(devices, updates, state: persistence.State, *, allow_create: b
     return created
 
 
+def unit_name(devices, device_id: str, number: int) -> str:
+    """The unit's name as the user sees it, for a log line."""
+    dev = devices.get(device_id)
+    unit = dev.Units.get(number) if dev is not None else None
+    return str(unit.Name) if unit is not None else f"unit {number}"
+
+
 def set_used(devices, device_id: str, units, used: bool) -> None:
     dev = devices.get(device_id)
     if dev is None:
@@ -223,9 +232,10 @@ def recover_from_devices(devices, state: persistence.State) -> list[tuple[str, i
                 state.unit_alloc.setdefault(dev_id, {}).setdefault(key, number)
             if kind:
                 state.unit_kinds.setdefault(dev_id, {}).setdefault(str(number), kind)
-            # A fixed unit's levels are defined in code (the status code selector), so there
-            # is no level map to lose.
-            if number < persistence.FIRST_DYNAMIC_UNIT:
+            # A fixed unit's levels are defined in code (actions, status code, delayed start),
+            # so there is no level map to lose; the program selector's come from Home Connect.
+            fixed = number < persistence.FIRST_DYNAMIC_UNIT
+            if fixed and number not in planner.DATA_DRIVEN_FIXED_UNITS:
                 continue
             if not _is_selector(state, dev_id, number, unit, kind):
                 continue

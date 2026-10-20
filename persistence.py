@@ -50,6 +50,11 @@ class State:
     block_until: float = 0.0
     block_length: float = 0.0
     account_shown: bool = True
+    # Whether the control-only units were last shown; they are hidden or shown once when
+    # AllowControl changes (spec 6.4).
+    control_shown: bool = False
+    # haId to the held delayed-start clock time, in minutes after midnight (spec 6.3).
+    delayed_start: dict[str, int] = field(default_factory=dict)
 
 
 def dumps(state: State) -> str:
@@ -64,6 +69,10 @@ def _is_num(value) -> bool:
 
 def _is_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_minute_of_day(value) -> bool:
+    return _is_int(value) and 0 <= value < 24 * 60
 
 
 def _float_or_zero(value) -> float:
@@ -196,6 +205,8 @@ def loads(text: str) -> tuple[State, bool]:
         block_until=_float_or_zero(raw.get("block_until")),
         block_length=_float_or_zero(raw.get("block_length")),
         account_shown=raw.get("account_shown") is not False,
+        control_shown=raw.get("control_shown") is True,
+        delayed_start=_typed_map(raw.get("delayed_start"), _is_minute_of_day),
     )
     _raise_next_unit(state)
     return state, False

@@ -1,3 +1,5 @@
+import json
+
 import persistence
 
 
@@ -157,3 +159,21 @@ def test_a_snapshot_without_names_keeps_its_cache():
     cache = load_cache(cache_node())
     assert cache.names == {} and cache.value_names == {}
     assert load_cache(cache_node(names="garbage")).names == {}
+
+
+def test_control_state_round_trips_and_bad_entries_are_dropped():
+    state = persistence.State(control_shown=True, delayed_start={"HA1": 1020})
+    loaded, fell_back = persistence.loads(persistence.dumps(state))
+    assert not fell_back and loaded.control_shown and loaded.delayed_start == {"HA1": 1020}
+    raw = json.loads(persistence.dumps(state))
+    raw["delayed_start"] = {"HA1": 1440, "HA2": "17:00", "HA3": True, "HA4": 30, "HA5": -1}
+    loaded, _ = persistence.loads(json.dumps(raw))
+    assert loaded.delayed_start == {"HA4": 30}
+
+
+def test_an_older_snapshot_has_no_control_state():
+    raw = json.loads(persistence.dumps(persistence.State()))
+    del raw["control_shown"], raw["delayed_start"]
+    loaded, fell_back = persistence.loads(json.dumps(raw))
+    assert not fell_back
+    assert (loaded.control_shown, loaded.delayed_start) == (False, {})

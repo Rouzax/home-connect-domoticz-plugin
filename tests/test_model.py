@@ -152,6 +152,14 @@ def test_events_and_connection_events():
     assert m.apply_event(sse.Event("KEEP-ALIVE", "", "")).kind == "keepalive"
 
 
+def test_event_items_name_their_alert():
+    m = ready_model()
+    key = "LaundryCare.Washer.Event.DrumCleanReminder"
+    item = {"key": key, "value": model.PRESENT, "name": "Drum clean needed", "level": "hint"}
+    m.apply_event(event("EVENT", [item]))
+    assert m.appliances[HA].names[key] == "Drum clean needed"
+
+
 def test_event_for_unknown_appliance():
     m = ready_model()
     eff = m.apply_event(event("STATUS", [{"key": OP, "value": "x"}], ha="BOSCH-NEW-1"))

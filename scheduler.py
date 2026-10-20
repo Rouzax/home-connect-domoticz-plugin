@@ -29,6 +29,9 @@ EMPTY_PROGRAMS_RETRY_S = 3600.0
 # programs-and-options page says "no programs available" for each) or that have no documented
 # programs (hobs, spec 3.2a): fetching them would only spend budget and error responses.
 # Cooktops are not listed because the docs do describe cooktop programs.
+# Stored in the persisted negative cache: it is not a dotted key, so it never collides with a
+# setting key, and it needs no snapshot format change.
+NO_COMMANDS = "commands"
 NO_PROGRAM_TYPES = frozenset({"FridgeFreezer", "Refrigerator", "Freezer", "WineCooler", "Hob"})
 
 
@@ -51,6 +54,12 @@ class Job:
     needs_token: bool = True
     auth_generation: int = 0
     retried: bool = False
+    # JSON body of a write. Kept out of the repr because it carries the user's values.
+    body: dict | None = field(default=None, repr=False)
+    # The coordinator's write this job carries, 0 for none.
+    command_id: int = 0
+    # "start" or "stop": booked by the budget's start/stop limiter (spec 7.7).
+    limit: str = ""
 
 
 def device_code_job(client_id: str) -> Job:
@@ -268,6 +277,16 @@ class Scheduler:
         app = m.appliances.get(job.ha_id)
         if app is None:
             return []
+        if status == 404 and job.kind == "commands":
+            # An appliance that offers no commands answers 404 every time: remember it, or each
+            # status answer asks again and a reconnect sends one 404 per appliance back to back,
+            # which trips the error brake (spec 7.3 step 5). The daily refresh asks once more.
+            if NO_COMMANDS not in app.cache.negative_keys:
+                app.cache.negative_keys.append(NO_COMMANDS)
+            # An earlier stamp is a retry an `available` failure in the same batch set; keep it.
+            stamp = app.cache.refreshed_at
+            app.cache.refreshed_at = min(stamp, self._wall()) if stamp else self._wall()
+            return []
         if status != 200:
             if job.kind in ("available", "commands"):
                 # daily() is the only retry for these fetches, so a failed one must not keep the
@@ -296,7 +315,7 @@ class Scheduler:
                             issued=m.tick(),
                         )
                     )
-            if not app.cache.commands:
+            if not app.cache.commands and NO_COMMANDS not in app.cache.negative_keys:
                 app.cache.refreshed_at = self._wall()
                 jobs.append(_api("commands", app.ha_id, "commands", issued=m.tick()))
         elif job.kind == "available":
@@ -319,6 +338,8 @@ class Scheduler:
                     )
         elif job.kind == "commands":
             app.cache.refreshed_at = self._wall()
+            if NO_COMMANDS in app.cache.negative_keys:
+                app.cache.negative_keys.remove(NO_COMMANDS)
         elif job.kind == "settings":
             self._judge_awaited(app, job)
             jobs += self._setting_details(m, app)

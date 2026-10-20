@@ -5,7 +5,10 @@ from dataclasses import replace
 import pytest
 
 import auth
+import control
+import coordinator
 import domoticz_api
+import errors
 import hc_client
 import persistence
 import planner
@@ -264,7 +267,7 @@ def test_unmapped_selector_is_named_and_refused(run, domoticz):
         Name="Oven Program", DeviceID=HA, Unit=25, TypeName="Selector Switch", Switchtype=18
     )
     unit.Create()
-    run()
+    run(AllowControl="true")  # with control off the control-off refusal comes first
     errors_ = [m for level, m in domoticz._log if level == "error"]
     assert any("Oven Program" in m for m in errors_)
     plugin.onCommand(HA, 25, "Set Level", 10, "")
@@ -612,18 +615,24 @@ def test_refresh_appliances_lists_again(run):
     assert "list" in made["req"].kinds()
 
 
-def test_appliance_commands_are_refused_in_this_version(run, domoticz):
-    run()
-    plugin.onCommand(HA, 2, "On", 0, "")
-    assert "later version" in log_text(domoticz)
+def test_appliance_commands_are_refused_while_control_is_off(run, domoticz):
+    made = run()
+    authorize(made)
+    discover(made)
+    made["req"].jobs.clear()
+    for unit in (2, 8, 9, 10, 12, 20, 25):
+        plugin.onCommand(HA, unit, "Set Level", 10, "")
+    assert made["req"].jobs == []
+    assert log_count(domoticz, "command_refused") == 7
+    assert "'Allow control' is off" in log_text(domoticz)
     assert HA not in log_text(domoticz)
 
 
 def test_status_code_selector_commands_are_refused(run, domoticz):
-    run()
+    run(AllowControl="true")
     plugin.onCommand(HA, planner.UNIT_STATUS_CODE, "Set Level", 40, "")
     assert log_count(domoticz, "command_refused") == 1
-    assert "later version" in log_text(domoticz)
+    assert "only shows a value" in log_text(domoticz)
 
 
 # -- discovery, model and devices ---------------------------------------------------------------
@@ -639,6 +648,18 @@ def test_discovery_creates_devices_and_starts_the_stream(run, domoticz):
     code = domoticz.Devices[HA].Units[planner.UNIT_STATUS_CODE]
     assert (code.nValue, code.stored["Used"]) == (40, 0)
     assert made["req"].take("active").ha_id == HA
+
+
+def test_fresh_install_creates_account_units_in_the_injected_devices(run, domoticz):
+    # A fresh hardware entry injects an empty Devices table; created units must be looked up
+    # in that same table, or every creation is reported as failed.
+    assert domoticz.Devices == {}
+    run()
+    plugin.onHeartbeat()
+    assert log_count(domoticz, "Could not create") == 0
+    assert planner.ACCOUNT_DEVICE in domoticz.Devices
+    names = plugin._s().state.auto_names
+    assert names[f"{planner.ACCOUNT_DEVICE}:{planner.ACCOUNT_TEXT}"] == account_unit(domoticz).Name
 
 
 def test_failed_listing_is_retried(run, clock):
@@ -734,6 +755,34 @@ def test_offline_answer_marks_the_appliance_offline(run, domoticz):
     discover(made)
     answer(made, "status", 409, b"", "offline", "x")
     assert domoticz.Devices[HA].Units[planner.UNIT_STATE].sValue == "Offline"
+
+
+def test_verbose_logs_each_event_item_with_its_whole_value(run, domoticz):
+    made = run()
+    authorize(made)
+    discover(made)
+    summary = {"water": "w" * 400}
+    items = [
+        {"key": "BSH.Common.Status.ProgramSessionSummary.Latest", "value": summary, "uri": HA},
+        {"key": "BSH.Common.Status.DoorState", "value": "x", "displayvalue": "Open"},
+    ]
+    event(made, "STATUS", json.dumps({"haId": HA, "items": items}))
+    plugin.onHeartbeat()
+    lines = [m for _, m in domoticz._log if m.startswith("event ")]
+    assert len(lines) == 2
+    assert 'appliance="Oven" key="BSH.Common.Status.ProgramSessionSummary.Latest"' in lines[0]
+    assert "w" * 400 in lines[0]
+    assert lines[1].endswith('key="BSH.Common.Status.DoorState" value="x" display="Open"')
+    assert HA not in log_text(domoticz)
+
+
+def test_basic_debug_level_logs_no_event_payloads(run, domoticz):
+    made = run(DebugLevel="1")
+    authorize(made)
+    discover(made)
+    event(made, "STATUS", json.dumps({"haId": HA, "items": [{"key": "K.A", "value": 1}]}))
+    plugin.onHeartbeat()
+    assert log_count(domoticz, "event ") == 0
 
 
 def test_offline_answer_then_stream_item_brings_the_appliance_back(run, domoticz):
@@ -1423,7 +1472,7 @@ def test_non_oauth_poll_answers_keep_polling(run, domoticz, clock, status, body)
     answer(made, "token_poll", status, body)
     s = plugin._s()
     assert s.flow is not None and s.auth_state == "AUTHORIZED"
-    assert "authorization_ended" not in log_text(domoticz)
+    assert "sign_in_ended" not in log_text(domoticz)
     clock.offset += s.flow.interval
     plugin.onHeartbeat()
     assert "token_poll" in made["req"].kinds()
@@ -1559,3 +1608,698 @@ def test_failed_revoke_logs_its_status_and_key(domoticz, monkeypatch):
     assert 'status=400 key="invalid_client"' in line
     for secret in (REFRESH, SECRET, ACCESS):
         assert secret not in log_text(domoticz)
+
+
+# -- control -------------------------------------------------------------------------------------
+
+OVEN_PROGRAM = "Cooking.Oven.Program.HeatingMode.HotAir"
+SETPOINT = "Cooking.Oven.Option.SetpointTemperature"
+START_IN = "BSH.Common.Option.StartInRelative"
+OPERATION = "BSH.Common.Status.OperationState"
+STATE = "BSH.Common.EnumType.OperationState."
+START_LIMITS = {"min": 0, "max": 86340, "stepsize": 60}
+START = planner.ACTION_LEVELS["start"]
+STOP = planner.ACTION_LEVELS["stop"]
+MODE = "Cooking.Oven.Option.HeatupMode"
+
+
+def items(*pairs):
+    return json.dumps({"haId": HA, "items": [{"key": k, "value": v} for k, v in pairs]})
+
+
+def selected_body(temperature=180):
+    options = [{"key": SETPOINT, "value": temperature, "unit": "°C"}]
+    return json.dumps({"data": {"key": OVEN_PROGRAM, "options": options}}).encode()
+
+
+def control_ready(run, extra_options=(), start_limits=START_LIMITS, **params):
+    """An authorized idle oven with control on, one program selected and its details known."""
+    made = run(AllowControl="true", **params)
+    authorize(made)
+    discover(made)
+    status = [
+        {"key": OPERATION, "value": STATE + "Ready"},
+        {"key": "BSH.Common.Status.RemoteControlStartAllowed", "value": True},
+    ]
+    answer(made, "status", body=json.dumps({"data": {"status": status}}).encode())
+    programs = {"data": {"programs": [{"key": OVEN_PROGRAM, "name": "Hete lucht"}]}}
+    answer(made, "available", body=json.dumps(programs).encode())
+    setpoint = {
+        "key": SETPOINT,
+        "type": "Double",
+        "unit": "°C",
+        "constraints": {"min": 30, "max": 250, "stepsize": 5},
+    }
+    start_in = {"key": START_IN, "type": "Int", "unit": "seconds", "constraints": start_limits}
+    options = [setpoint, start_in, *extra_options]
+    detail = {"data": {"key": OVEN_PROGRAM, "options": options}}
+    answer(made, "program_detail", body=json.dumps(detail).encode())
+    answer(made, "selected", body=selected_body())
+    made["req"].jobs.clear()
+    return made
+
+
+def setpoint_unit():
+    return plugin._s().state.unit_alloc[HA][SETPOINT]
+
+
+def reply(made, kind, status=204, body=b"", category="", key=""):
+    req = made["req"]
+    job = req.take(kind)
+    fakes.push(req, fakes.result(req, job, status, body, category, key))
+    plugin.onHeartbeat()
+    return job
+
+
+def test_select_temperature_and_start_go_out_one_at_a_time_in_order(run, clock):
+    made = control_ready(run)
+    req = made["req"]
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    assert req.kinds() == ["command"]
+    select = reply(made, "command")
+    assert (select.method, select.body) == ("PUT", {"data": {"key": OVEN_PROGRAM}})
+    reply(made, "verify", 200, selected_body())  # a selection is confirmed by its own GET
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    temperature = reply(made, "command")
+    assert temperature.body == {"data": {"key": SETPOINT, "value": 200, "unit": "°C"}}
+    assert req.kinds() == ["verify"]  # the waiting Start asks for the new value at once
+    event(made, "NOTIFY", items((SETPOINT, 200)))
+    plugin.onHeartbeat()
+    start = req.take("command")
+    assert start.path.endswith("/programs/active") and start.limit == "start"
+    expected = {"data": {"key": OVEN_PROGRAM, "options": [{"key": SETPOINT, "value": 200}]}}
+    assert start.body == expected
+
+
+def test_a_failed_temperature_change_blocks_the_start_behind_it(run, domoticz, clock):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    error = {"error": {"key": "SDK.Error.InvalidOptionValue", "description": "Value not allowed"}}
+    body = json.dumps(error).encode()
+    reply(made, "command", 409, body, "refused_validation", "SDK.Error.InvalidOptionValue")
+    assert "command" not in made["req"].kinds()
+    assert "Start not sent" in log_text(domoticz)
+    assert "Value not allowed" in log_text(domoticz)
+
+
+def test_stop_cancels_a_start_that_was_not_sent(run, domoticz, clock):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", STOP, "")
+    assert "Cancelled by Stop" in log_text(domoticz)
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    assert reply(made, "command").body["data"]["key"] == SETPOINT
+    event(made, "NOTIFY", items((SETPOINT, 200)))
+    plugin.onHeartbeat()
+    assert "command" not in made["req"].kinds()
+
+
+def test_a_start_without_an_answer_is_checked_once_and_never_resent(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    reply(made, "command", 0, category="network")
+    check = reply(made, "verify", 200, status_body(STATE + "Ready"))
+    assert (check.method, check.key) == ("GET", "status")
+    assert made["req"].kinds() == []
+    assert "did not start" in log_text(domoticz)
+
+
+def test_the_commanded_value_shows_at_once_and_reverts_on_a_refusal(run, domoticz, clock):
+    made = control_ready(run)
+    unit = domoticz.Devices[HA].Units[setpoint_unit()]
+    assert unit.sValue == "180.0"
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    assert unit.sValue == "200.0"
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    reply(made, "command", 409, b"", "refused_validation", "SDK.Error.InvalidOptionValue")
+    assert unit.sValue == "180.0"
+
+
+def test_heartbeat_runs_fast_only_while_commands_are_pending(run, domoticz):
+    made = control_ready(run)
+    assert domoticz._heartbeat == plugin.HEARTBEAT_S
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    assert domoticz._heartbeat == plugin.FAST_HEARTBEAT_S
+    reply(made, "command")
+    event(made, "STATUS", items((OPERATION, STATE + "Run")))
+    plugin.onHeartbeat()
+    assert domoticz._heartbeat == plugin.HEARTBEAT_S
+
+
+def test_a_held_delayed_start_goes_with_start_as_seconds_from_now(run, monkeypatch):
+    made = control_ready(run)
+    now = time.time()
+    monkeypatch.setattr(plugin, "_wall", lambda: now)
+    level = planner.delay_level(17 * 60)
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Set Level", level, "")
+    assert plugin._s().state.delayed_start[HA] == 17 * 60
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    start = made["req"].take("command")
+    expected = control.delay_seconds(17 * 60, START_LIMITS, now, "en")
+    assert isinstance(expected, control.Delay)
+    assert {"key": START_IN, "value": expected.seconds} in start.body["data"]["options"]
+
+
+def test_the_held_time_is_spent_when_the_delayed_program_starts(run):
+    made = control_ready(run)
+    s = plugin._s()
+    s.state.delayed_start[HA] = 17 * 60
+    event(made, "STATUS", items((OPERATION, STATE + "DelayedStart")))
+    plugin.onHeartbeat()
+    assert HA in s.state.delayed_start
+    event(made, "STATUS", items((OPERATION, STATE + "Run")))
+    plugin.onHeartbeat()
+    assert HA not in s.state.delayed_start
+
+
+def test_a_start_is_checked_again_when_it_is_sent(run, domoticz, clock):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    event(made, "STATUS", items(("BSH.Common.Status.RemoteControlStartAllowed", False)))
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    reply(made, "command")
+    event(made, "NOTIFY", items((SETPOINT, 200)))
+    plugin.onHeartbeat()
+    assert "command" not in made["req"].kinds()
+    assert "Remote start is not enabled" in log_text(domoticz)
+
+
+def test_control_units_are_hidden_once_when_control_is_turned_off(run, domoticz):
+    control_ready(run)
+    actions = domoticz.Devices[HA].Units[planner.UNIT_ACTIONS]
+    assert actions.stored["Used"] == 1
+    plugin.onStop()
+    run(AllowControl="false")
+    assert actions.stored["Used"] == 0
+    assert domoticz.Devices[HA].Units[planner.UNIT_PROGRAM_SELECT].stored["Used"] == 1
+    assert saved_state(domoticz).control_shown is False
+
+
+def test_a_program_selector_without_its_key_list_is_refused(run, domoticz):
+    unit = domoticz.Unit(
+        Name="Oven Program choice",
+        DeviceID=HA,
+        Unit=planner.UNIT_PROGRAM_SELECT,
+        TypeName="Selector Switch",
+        Switchtype=18,
+        Options={"LevelNames": "-|Hete lucht"},
+    )
+    unit.Create()
+    made = run(AllowControl="true")
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    assert "restore a backup" in log_text(domoticz)
+    assert "command" not in made["req"].kinds()
+
+
+def test_a_write_refused_with_401_is_sent_once_more_after_a_refresh(run):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    req = made["req"]
+    write = req.take("command")
+    fakes.push(req, fakes.result(req, write, 401, b"", "auth", "invalid_token"))
+    plugin.onHeartbeat()
+    fakes.push(req, fakes.result(req, req.take("refresh"), 200, token_body(ACCESS2)))
+    plugin.onHeartbeat()
+    again = req.take("command")
+    assert again.retried and (again.command_id, again.body) == (write.command_id, write.body)
+
+
+def test_a_write_the_worker_refuses_is_reported_with_the_reason(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    req = made["req"]
+    fakes.push(req, workers.Refused(req.generation, req.take("command"), "limiter", 20.0))
+    plugin.onHeartbeat()
+    assert "limit reached (5 per minute); try again in 20 s" in log_text(domoticz)
+
+
+def test_a_stop_refused_for_no_active_program_says_nothing_runs(run, domoticz):
+    made = control_ready(run)
+    event(made, "STATUS", items((OPERATION, STATE + "Run")))
+    plugin.onHeartbeat()
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", STOP, "")
+    event(made, "STATUS", items((OPERATION, STATE + "Ready")))
+    key = "SDK.Error.NoProgramActive"
+    reply(made, "command", 404, b"", "state", key)
+    assert "No program is running on Oven" in log_text(domoticz)
+
+
+def test_a_refused_command_names_the_device(run, domoticz):
+    control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", 0, "")
+    [line] = [m for _, m in domoticz._log if "command_refused" in m]
+    assert 'device="Oven Actions"' in line and "unit=" not in line
+
+
+def test_a_write_that_cannot_be_queued_is_refused(run, domoticz):
+    made = control_ready(run)
+    made["req"].accepting = False
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    assert "Too many requests queued" in log_text(domoticz)
+
+
+def test_lost_authorization_cancels_queued_writes(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    plugin._lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_grant")
+    assert "command_cancelled" in log_text(domoticz)
+    assert "command" not in made["req"].kinds()
+
+
+def test_actions_return_to_their_neutral_level_and_the_same_action_runs_twice(run, domoticz):
+    # Spec 6.2 unit 9: a scene that stores Start runs it every time, not only the first time.
+    made = control_ready(run)
+    actions = domoticz.Devices[HA].Units[planner.UNIT_ACTIONS]
+    sent = []
+    for _ in range(2):
+        actions.nValue, actions.sValue = START, str(START)  # as left by the user's choice
+        plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+        assert (actions.nValue, actions.sValue) == (0, "0")
+        refusal = "BSH.Common.Error.RemoteStartNotActive"
+        sent.append(reply(made, "command", 409, b"", "refused_state", refusal))
+    assert [job.path.endswith("/programs/active") for job in sent] == [True, True]
+    assert sent[0].command_id != sent[1].command_id
+
+
+def delayed_oven(made):
+    """The oven waits for a delayed start of the selected program, an hour from now."""
+    event(made, "STATUS", items((OPERATION, STATE + "DelayedStart")))
+    event(made, "NOTIFY", items(("BSH.Common.Root.ActiveProgram", OVEN_PROGRAM), (START_IN, 3600)))
+    plugin.onHeartbeat()
+    made["req"].jobs.clear()
+
+
+@pytest.mark.parametrize("status, held", [(204, 18 * 60), (409, 17 * 60)])
+def test_a_delayed_start_move_is_held_only_once_confirmed(run, domoticz, status, held):
+    made = control_ready(run)
+    s = plugin._s()
+    s.state.delayed_start[HA] = 17 * 60
+    delayed_oven(made)
+    level = planner.delay_level(18 * 60)
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Set Level", level, "")
+    assert "Moving the delayed start to 18:00" in log_text(domoticz)
+    assert s.state.delayed_start[HA] == 17 * 60  # not before Home Connect has answered
+    move = reply(made, "command", status, b"", "" if status < 400 else "refused_state")
+    assert move.body["data"]["key"] == START_IN
+    assert s.state.delayed_start[HA] == held
+    unit = domoticz.Devices[HA].Units[planner.UNIT_DELAYED_START]
+    assert unit.sValue == str(planner.delay_level(held))
+
+
+def test_a_delayed_start_move_shows_at_once_and_reverts_on_refusal(run, domoticz):
+    made = control_ready(run)
+    plugin._s().state.delayed_start[HA] = 17 * 60
+    delayed_oven(made)
+    unit = domoticz.Devices[HA].Units[planner.UNIT_DELAYED_START]
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Set Level", planner.delay_level(18 * 60), "")
+    assert unit.sValue == str(planner.delay_level(18 * 60))
+    reply(made, "command", 409, b"", "refused_state")
+    assert unit.sValue == str(planner.delay_level(17 * 60))
+
+
+def test_a_blocked_program_selector_stays_blocked_across_restarts(run, domoticz):
+    options = {"LevelNames": "-|Old program"}
+    unit = domoticz.Unit(
+        Name="Oven Program choice",
+        DeviceID=HA,
+        Unit=planner.UNIT_PROGRAM_SELECT,
+        TypeName="Selector Switch",
+        Switchtype=18,
+        Options=options,
+    )
+    unit.Create()
+    control_ready(run)
+    assert unit.stored["Options"] == options
+    plugin.onStop()
+    made = run(AllowControl="true")
+    assert (HA, planner.UNIT_PROGRAM_SELECT) in plugin._s().blocked_selectors
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    assert "restore a backup" in log_text(domoticz)
+    assert "command" not in made["req"].kinds()
+
+
+def test_a_blocked_option_selector_stays_blocked_across_restarts(run, domoticz):
+    # Spec 4.4: a fresh level map from today's values would give a stored scene level another
+    # value, and writing its key list would unblock it at the next start.
+    options = {"HCKey": MODE, "LevelNames": "-|Old mode"}
+    unit = domoticz.Unit(
+        Name="Oven Heat-up",
+        DeviceID=HA,
+        Unit=25,
+        TypeName="Selector Switch",
+        Switchtype=18,
+        Options=options,
+    )
+    unit.Create()
+    mode = {
+        "key": MODE,
+        "type": "Cooking.Oven.EnumType.HeatupMode",
+        "constraints": {"allowedvalues": ["Cooking.Oven.EnumType.HeatupMode.Fast"]},
+    }
+    control_ready(run, extra_options=[mode])
+    assert unit.stored["Options"] == options
+    assert "25" not in plugin._s().state.level_maps.get(HA, {})
+    plugin.onStop()
+    made = run(AllowControl="true")
+    assert (HA, 25) in plugin._s().blocked_selectors
+    plugin.onCommand(HA, 25, "Set Level", 10, "")
+    assert "restore a backup" in log_text(domoticz)
+    assert "command" not in made["req"].kinds()
+
+
+def test_a_write_answered_offline_marks_the_appliance_offline(run):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    reply(made, "command", 409, b"", errors.OFFLINE, "SDK.Error.HomeAppliance.Connection.Failed")
+    assert not plugin._s().model.appliances[HA].connected
+
+
+def test_choosing_no_delayed_start_clears_the_held_time(run, domoticz):
+    control_ready(run)
+    s = plugin._s()
+    s.state.delayed_start[HA] = 17 * 60
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Off", 0, "")
+    assert HA not in s.state.delayed_start
+    assert "Delayed start cleared" in log_text(domoticz)
+
+
+def test_a_rounded_value_is_logged_with_the_command(run, domoticz):
+    control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 203.0, "")
+    assert "command_adjusted" in log_text(domoticz)
+    assert "rounded to 205" in log_text(domoticz)
+
+
+def test_a_check_that_cannot_be_queued_decides_on_what_is_known(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    made["req"].accepting = False
+    reply(made, "command", 0, category="network")
+    assert "did not start" in log_text(domoticz)
+    assert not plugin._s().coord.busy()
+
+
+def test_a_delay_beyond_the_appliance_limit_is_clamped_when_start_is_sent(
+    run, domoticz, monkeypatch
+):
+    made = control_ready(run, start_limits={"min": 0, "max": 3600, "stepsize": 60})
+    now = time.time()
+    monkeypatch.setattr(plugin, "_wall", lambda: now)
+    local = time.localtime(now)
+    minutes = ((local.tm_hour * 60 + local.tm_min) // 30 * 30 + 180) % (24 * 60)
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Set Level", planner.delay_level(minutes), "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    start = made["req"].take("command")
+    assert {"key": START_IN, "value": 3600} in start.body["data"]["options"]
+    assert "later than the appliance allows" in log_text(domoticz)
+
+
+def test_stopping_reports_queued_and_sent_writes_and_sends_nothing_more(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+    made["req"].take("command")  # the selection is on its way; the Start waits behind it
+    plugin.onStop()
+    assert "command_cancelled" in log_text(domoticz)
+    assert "command_unconfirmed" in log_text(domoticz)
+    assert "Plugin stopping" in log_text(domoticz)
+    assert made["req"].jobs == []
+    assert not plugin._s().coord.busy()
+
+
+def test_stopping_puts_the_observed_value_back_on_a_cancelled_write(run, domoticz):
+    made = control_ready(run)
+    unit = domoticz.Devices[HA].Units[setpoint_unit()]
+    shown = unit.sValue
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    assert unit.sValue != shown  # the request is shown while it is pending
+    plugin.onStop()
+    assert "command_cancelled" in log_text(domoticz)
+    assert unit.sValue == shown
+    assert made["req"].stopped and made["stream"].stopped
+
+
+def test_stop_stops_the_workers_when_restoring_the_devices_fails(run, domoticz, monkeypatch):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+
+    def broken():
+        raise RuntimeError("devices gone")
+
+    monkeypatch.setattr(plugin, "_write_devices", broken)
+    plugin.onStop()
+    assert made["req"].stopped and made["stream"].stopped
+
+
+def test_a_blocked_selector_is_refused_as_control_off_while_control_is_off(run, domoticz):
+    domoticz.Unit(
+        Name="Oven Program choice",
+        DeviceID=HA,
+        Unit=planner.UNIT_PROGRAM_SELECT,
+        TypeName="Selector Switch",
+        Switchtype=18,
+        Options={"LevelNames": "-|Hete lucht"},
+    ).Create()
+    run()
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    refused = [m for _, m in domoticz._log if "command_refused" in m]
+    assert len(refused) == 1 and "'Allow control' is off" in refused[0]
+
+
+def test_a_start_for_an_unknown_appliance_fails_alone(run, domoticz):
+    made = control_ready(run)
+    s = plugin._s()
+    other = "BOSCH-HCS99XXX1-000000000099"
+    request = control.start_request(other, OVEN_PROGRAM, [])
+    lost = control.Intent(other, "start", OVEN_PROGRAM, None, request, "Start", limit="start")
+    s.coord.submit(lost, plugin._mono())
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    assert made["req"].take("command").ha_id == HA
+    assert "not discovered yet" in log_text(domoticz)
+
+
+def test_a_check_hit_by_a_401_after_authorization_was_lost_still_settles(run, domoticz, clock):
+    made = control_ready(run)
+    unit = domoticz.Devices[HA].Units[setpoint_unit()]
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    reply(made, "command")
+    clock.offset += coordinator.CONFIRM_S
+    plugin.onHeartbeat()
+    req = made["req"]
+    check = req.take("verify")
+    plugin._lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_grant")
+    fakes.push(req, fakes.result(req, check, 401, b"", "auth", "invalid_token"))
+    plugin.onHeartbeat()
+    assert "command_unconfirmed" in log_text(domoticz)
+    assert not plugin._s().coord.busy() and plugin._s().coord.overlay() == {}
+    assert unit.sValue == "180.0"
+    assert domoticz._heartbeat == plugin.HEARTBEAT_S
+
+
+def test_a_write_held_for_a_refresh_that_fails_is_reported_not_sent(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    req = made["req"]
+    fakes.push(req, fakes.result(req, req.take("command"), 401, b"", "auth", "invalid_token"))
+    plugin.onHeartbeat()
+    refresh = req.take("refresh")
+    fakes.push(req, fakes.result(req, refresh, 400, oauth_error("invalid_grant"), "oauth"))
+    plugin.onHeartbeat()
+    assert plugin._s().auth_state == "NEEDS_REAUTH"
+    cancelled = [m for _, m in domoticz._log if "command_cancelled" in m]
+    assert len(cancelled) == 1 and "Not signed in" in cancelled[0]
+    assert "command_unconfirmed" not in log_text(domoticz)
+    assert not plugin._s().coord.busy()
+
+
+def test_a_write_refused_401_again_after_the_refresh_is_reported_not_sent(run, domoticz):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    req = made["req"]
+    for _ in range(2):
+        fakes.push(req, fakes.result(req, req.take("command"), 401, b"", "auth", "invalid_token"))
+        plugin.onHeartbeat()
+        if plugin._s().refresh_in_flight:
+            fakes.push(req, fakes.result(req, req.take("refresh"), 200, token_body(ACCESS2)))
+            plugin.onHeartbeat()
+    assert plugin._s().auth_state == "NEEDS_REAUTH"
+    assert "command_cancelled" in log_text(domoticz)
+    assert "command_unconfirmed" not in log_text(domoticz)
+
+
+def test_a_value_already_shown_sends_nothing(run, domoticz, clock):
+    made = control_ready(run)
+    plugin.onCommand(HA, setpoint_unit(), "Set Level", 180.0, "")
+    clock.offset += coordinator.SETPOINT_DEBOUNCE_S
+    plugin.onHeartbeat()
+    assert "command" not in made["req"].kinds()
+    skipped = [m for _, m in domoticz._log if "command_skipped" in m]
+    assert len(skipped) == 1 and "Set temperature: 180" in skipped[0]
+    assert not plugin._s().coord.busy()
+
+
+def test_stop_stops_the_workers_and_saves_when_reporting_pending_writes_fails(
+    run, domoticz, monkeypatch
+):
+    made = control_ready(run)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", START, "")
+
+    def broken(notes):
+        raise RuntimeError("log sink gone")
+
+    monkeypatch.setattr(plugin, "_notes", broken)
+    plugin.onStop()
+    assert made["req"].stopped and made["stream"].stopped
+    assert saved_state(domoticz).control_shown is True
+    assert "stop failed (RuntimeError)" in log_text(domoticz)
+
+
+def test_a_move_confirmed_after_the_program_started_holds_nothing(run, domoticz):
+    made = control_ready(run)
+    s = plugin._s()
+    s.state.delayed_start[HA] = 17 * 60
+    delayed_oven(made)
+    plugin.onCommand(HA, planner.UNIT_DELAYED_START, "Set Level", planner.delay_level(18 * 60), "")
+    event(made, "STATUS", items((OPERATION, STATE + "Run")))
+    plugin.onHeartbeat()
+    assert HA not in s.state.delayed_start  # spent by the start
+    reply(made, "command")
+    assert HA not in s.state.delayed_start
+
+
+def held_for_refresh(made):
+    """A selection answered 401: it waits for the refreshed token."""
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    req = made["req"]
+    fakes.push(req, fakes.result(req, req.take("command"), 401, b"", "auth", "invalid_token"))
+    plugin.onHeartbeat()
+
+
+def failed_lines(domoticz):
+    return [m for _, m in domoticz._log if "command_failed" in m]
+
+
+def test_a_write_held_for_a_refresh_is_reported_not_sent_when_a_new_grant_replaces_it(
+    run, domoticz
+):
+    made = control_ready(run)
+    held_for_refresh(made)
+    plugin._grant(live_tokens())
+    [line] = failed_lines(domoticz)
+    assert "give the command again" in line
+    assert not plugin._s().coord.busy()
+    assert "command" not in made["req"].kinds()
+
+
+def test_a_write_that_finds_the_refresh_queue_full_is_reported_not_sent(run, domoticz):
+    made = control_ready(run)
+    s = plugin._s()
+    s.after_refresh.extend([s.sched.list_job(s.model)] * plugin.AWAITING_TOKEN_MAX)
+    held_for_refresh(made)
+    [line] = failed_lines(domoticz)
+    assert "try again in a minute" in line
+    assert not plugin._s().coord.busy()
+
+
+def test_a_write_turned_away_without_a_token_and_no_room_to_wait_is_reported(run, domoticz):
+    made = control_ready(run)
+    s = plugin._s()
+    s.refresh_wanted = True
+    s.after_refresh.extend([s.sched.list_job(s.model)] * plugin.AWAITING_TOKEN_MAX)
+    plugin.onCommand(HA, planner.UNIT_PROGRAM_SELECT, "Set Level", 10, "")
+    req = made["req"]
+    fakes.push(req, workers.Refused(req.generation, req.take("command"), "no_token"))
+    plugin.onHeartbeat()
+    [line] = failed_lines(domoticz)
+    assert "try again in a minute" in line
+
+
+def test_a_held_write_that_cannot_be_queued_after_the_refresh_is_reported(run, domoticz):
+    made = control_ready(run)
+    held_for_refresh(made)
+    req = made["req"]
+    refresh = req.take("refresh")
+    req.accepting = False
+    fakes.push(req, fakes.result(req, refresh, 200, token_body(ACCESS2)))
+    plugin.onHeartbeat()
+    [line] = failed_lines(domoticz)
+    assert "Too many requests queued" in line
+    assert not plugin._s().coord.busy()
+
+
+# -- plain log wording ----------------------------------------------------------------------------
+
+
+def status_lines(domoticz):
+    return [m for level, m in domoticz._log if level == "status"]
+
+
+def test_sign_in_status_lines_read_as_plain_words(run, domoticz):
+    made = run()
+    start_flow(made)
+    assert 'started account="not signed in yet"' in status_lines(domoticz)
+    [line] = [m for m in status_lines(domoticz) if m.startswith("sign_in_needed ")]
+    assert "ABCD-EFGH" in line and "link=" in line
+    approve(made)
+    assert "signed_in" in status_lines(domoticz)
+    plugin.onStop()
+    run()
+    assert 'started account="signed in"' in status_lines(domoticz)
+    # No status line carries a raw state name such as "AUTHORIZED" for the user to decode.
+    for line in status_lines(domoticz):
+        assert "AUTHORIZED" not in line and "AWAITING_USER" not in line, line
+
+
+def test_an_expired_sign_in_code_says_what_to_do(run, domoticz, monkeypatch):
+    made = run()
+    start_flow(made)
+    monkeypatch.setattr(plugin, "_wall", lambda: time.time() + 4000)
+    plugin.onHeartbeat()
+    [line] = [m for m in status_lines(domoticz) if m.startswith("sign_in_code_expired")]
+    assert "Sign in again" in line
+
+
+def test_existing_account_selector_gets_the_new_level_names(run, domoticz):
+    old = planner._selector_options(["-", "Re-authorize", "Refresh appliances"], SelectorStyle="0")
+    unit = domoticz.Unit(
+        Name="Home Connect actions",
+        DeviceID=planner.ACCOUNT_DEVICE,
+        Unit=planner.ACCOUNT_ACTIONS,
+        TypeName="Selector Switch",
+        Options=old,
+        Used=1,
+    )
+    unit.Create()
+    run()
+    plugin.onHeartbeat()
+    levels = unit.stored["Options"]["LevelNames"]
+    assert levels == "-|Sign in again|Refresh appliances"
+    assert plugin.REAUTHORIZE_LEVEL == 10 and plugin.REFRESH_LEVEL == 20  # numbers never move
+
+
+def test_refresh_while_signed_out_names_what_was_refused(run, domoticz):
+    run()
+    plugin._account_action(plugin.REFRESH_LEVEL)
+    assert 'refresh_appliances_refused detail="not signed in"' in status_lines(domoticz)
+
+
+def test_recreated_account_units_start_hidden_while_signed_in(run, domoticz):
+    made = run()
+    authorize(made)
+    del domoticz.Devices[planner.ACCOUNT_DEVICE]  # the user deleted the account devices
+    plugin.onHeartbeat()
+    assert account_unit(domoticz).stored["Used"] == 0
+    assert account_unit(domoticz, planner.ACCOUNT_ACTIONS).stored["Used"] == 0

@@ -427,3 +427,39 @@ def test_status_code_selector_is_never_blocked(domoticz):
     make_unit("H1", planner.UNIT_STATUS_CODE, options, SELECTOR, Switchtype=18)
     state = persistence.State(unit_kinds={"H1": {str(planner.UNIT_STATUS_CODE): "selector"}})
     assert domoticz_api.recover_from_devices(domoticz.Devices, state) == []
+
+
+def test_program_selector_levels_are_recovered_from_hckeys(domoticz):
+    unit = planner.UNIT_PROGRAM_SELECT
+    make_unit("H1", unit, {"LevelNames": "-|A|B", "HCKeys": "|P.A|P.B"}, SELECTOR, Switchtype=18)
+    make_unit("H2", unit, {"LevelNames": "-|A"}, SELECTOR, Switchtype=18)
+    state = persistence.State()
+    blocked = domoticz_api.recover_from_devices(domoticz.Devices, state)
+    assert state.level_maps["H1"][str(unit)] == ["P.A", "P.B"]
+    assert blocked == [("H2", unit)]
+
+
+def test_code_defined_control_selectors_are_never_blocked(domoticz):
+    for unit in (planner.UNIT_ACTIONS, planner.UNIT_DELAYED_START):
+        make_unit("H1", unit, {"LevelNames": "-|Start"}, SELECTOR, Switchtype=18)
+    assert domoticz_api.recover_from_devices(domoticz.Devices, persistence.State()) == []
+
+
+def test_unit_name_falls_back_to_the_number(domoticz):
+    make_unit("D1", 9, {})
+    assert domoticz_api.unit_name(domoticz.Devices, "D1", 9) == "u9"
+    assert domoticz_api.unit_name(domoticz.Devices, "D1", 8) == "unit 8"
+    assert domoticz_api.unit_name(domoticz.Devices, "missing", 8) == "unit 8"
+
+
+def test_description_is_set_at_creation_only(domoticz):
+    state = persistence.State()
+    domoticz_api.apply_updates(domoticz.Devices, [up(20, description="Shows the state.")], state)
+    unit = domoticz.Devices["D1"].Units[20]
+    assert unit.stored["Description"] == "Shows the state."
+    unit.Description = "My own note"  # the user edits it
+    unit.Update(Log=False, UpdateProperties=True)
+    domoticz_api.apply_updates(
+        domoticz.Devices, [up(20, "y", description="Other text", name="Renamed")], state
+    )
+    assert unit.stored["Description"] == "My own note"

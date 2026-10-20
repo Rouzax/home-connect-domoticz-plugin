@@ -84,21 +84,20 @@ def test_null_key_is_none_not_the_text_none():
     assert errors.parse_api_error(401, raw).category == errors.AUTH
 
 
-def test_every_message_key_is_a_user_actionable_key():
-    assert set(_USER_MESSAGES) <= _USER_KEYS
+def test_every_user_actionable_key_has_a_message_in_both_languages():
+    assert set(_USER_MESSAGES) == _USER_KEYS
+    for key in _USER_KEYS:
+        en = errors.user_message(key, "Robot", "en")
+        nl = errors.user_message(key, "Robot", "nl")
+        assert en and nl and en != nl, key
+        assert "Robot" in en and "Robot" in nl, key
 
 
-def test_user_actionable_keys_without_a_message_are_listed():
-    # Deferred to the control plan; listed here so the gap stays visible.
-    without_message = {
-        "SDK.Error.BatteryLevelTooLow",
-        "SDK.Error.ConsumerProducts.CleaningRobot.Status.Lifted",
-        "SDK.Error.ConsumerProducts.CleaningRobot.Status.DustBoxNotInserted",
-        "SDK.Error.ConsumerProducts.CleaningRobot.Status.AlreadyAtHome",
-    }
-    assert _USER_KEYS - set(_USER_MESSAGES) == without_message
-    for key in without_message:
-        assert errors.user_message(key, "x", "en") is None
+def test_robot_and_battery_messages_name_the_fix():
+    battery = errors.user_message("SDK.Error.BatteryLevelTooLow", "Robot", "en")
+    assert battery is not None and "charge" in battery
+    lifted = "SDK.Error.ConsumerProducts.CleaningRobot.Status.Lifted"
+    assert "floor" in (errors.user_message(lifted, "Robot", "en") or "")
 
 
 def test_parse_json_is_safe_on_untrusted_bodies():

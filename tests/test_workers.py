@@ -56,15 +56,15 @@ class RecordingBudget(budget.Budget):
         self.granted = []
         self.recorded = []
 
-    def acquire(self, cls, *, exempt_brake=False):
-        decision = super().acquire(cls, exempt_brake=exempt_brake)
+    def acquire(self, cls, *, exempt_brake=False, limit=""):
+        decision = super().acquire(cls, exempt_brake=exempt_brake, limit=limit)
         if decision.allowed:
             self.granted.append(decision.probe)
         return decision
 
-    def record(self, *, error, counts=True, probe=False, neutral=False):
+    def record(self, *, error, counts=True, probe=False, neutral=False, network=False):
         self.recorded.append((error, counts, probe, neutral))
-        super().record(error=error, counts=counts, probe=probe, neutral=neutral)
+        super().record(error=error, counts=counts, probe=probe, neutral=neutral, network=network)
 
 
 def resp(status, body=b"{}", headers=None):
@@ -965,3 +965,106 @@ def test_stream_stop_during_a_slow_connect_joins_within_the_deadline():
     assert not w.is_alive()
     assert time.monotonic() - started < 6
     server.close()
+
+
+def command_job(**kw):
+    base = dict(
+        kind="command",
+        method="PUT",
+        priority=scheduler.PRIORITY_COMMAND,
+        budget_class=budget.COMMAND,
+        body={"data": {"key": "BSH.Common.Option.Duration", "value": 4711}},
+        command_id=7,
+    )
+    base.update(kw)
+    return api_job(**base)
+
+
+def test_a_write_sends_its_json_body_once():
+    client = FakeClient([resp(204, b"")])
+    w, results = start_request_worker(client)
+    job = command_job()
+    w.submit(job)
+    items = drain(results, until=lambda o: results_of(o, workers.Result))
+    w.stop()
+    [r] = results_of(items, workers.Result)
+    assert (r.status, r.job.command_id) == (204, 7)
+    method, _, kw = client.calls[0]
+    assert method == "PUT" and kw["json_body"] == job.body
+    assert "4711" not in repr(r.job)  # the body stays out of the repr
+
+
+def test_a_write_without_an_answer_is_never_retried():
+    client = FakeClient([hc_client.TransportError("OSError"), resp(204, b"")])
+    b = budget.Budget()
+    w, results = start_request_worker(client, b)
+    w.submit(command_job())
+    items = drain(results, until=lambda o: results_of(o, workers.Result))
+    w.stop()
+    [r] = results_of(items, workers.Result)
+    assert (r.status, r.category) == (0, "network")
+    assert len(client.calls) == 1
+    assert b.snapshot.network_failed_mono > 0
+
+
+def test_a_start_over_the_limit_is_refused_not_queued():
+    b = budget.Budget()
+    for _ in range(budget.ACTION_LIMIT):
+        assert b.acquire(budget.COMMAND, limit="start").allowed
+        b.record(error=False)
+    client = FakeClient([])
+    w, results = start_request_worker(client, b)
+    w.submit(command_job(limit="start"))
+    items = drain(results, until=lambda o: results_of(o, workers.Refused))
+    w.stop()
+    assert results_of(items, workers.Refused)[0].reason == "limiter"
+    assert client.calls == []
+
+
+def test_only_a_command_held_by_the_pace_waits_and_only_within_its_ttl():
+    w = workers.RequestWorker(
+        FakeClient([]),
+        budget.Budget(),
+        queue.Queue(),
+        generation=1,
+        accept_language="en-GB",
+        mono=lambda: 1000.0,
+    )
+    pace = budget.Decision(False, "pace", 5.0)
+    assert w._waits_for_pace(command_job(ttl_deadline=1030.0), pace)
+    assert not w._waits_for_pace(command_job(ttl_deadline=1003.0), pace)
+    assert w._waits_for_pace(command_job(), pace)  # no deadline set
+    limiter = budget.Decision(False, "limiter", 5.0)
+    assert not w._waits_for_pace(command_job(ttl_deadline=1030.0), limiter)
+    assert not w._waits_for_pace(api_job(), pace)  # background work has its own requeue
+
+
+class HeldBudget(budget.Budget):
+    """Refuses every request with one decision."""
+
+    def __init__(self, decision):
+        super().__init__()
+        self.decision = decision
+
+    def acquire(self, cls, *, exempt_brake=False, limit=""):
+        return self.decision
+
+
+def test_a_command_held_by_the_pace_is_requeued_within_its_ttl_else_refused_with_the_wait():
+    results = queue.Queue()
+    pace = budget.Decision(False, "pace", 5.0)
+    w = workers.RequestWorker(
+        FakeClient([]),
+        HeldBudget(pace),
+        results,
+        generation=1,
+        accept_language="en-GB",
+        mono=lambda: 1000.0,
+    )
+    w.set_token("TOKEN", 1)
+    w._execute(command_job(ttl_deadline=1030.0))
+    assert len(w.jobs) == 1 and results.empty()
+    w._execute(command_job(ttl_deadline=1003.0, command_id=8))
+    [refused] = results_of(drain(results, timeout=0.2), workers.Refused)
+    assert (refused.reason, refused.wait_s, refused.job.command_id) == ("pace", 5.0, 8)
+    assert len(w.jobs) == 1  # the refused one was not queued

@@ -93,6 +93,22 @@ _USER_MESSAGES = {
         "en": "The program on {a} cannot be stopped at this point",
         "nl": "Het programma op {a} kan nu niet worden gestopt",
     },
+    "SDK.Error.BatteryLevelTooLow": {
+        "en": "The battery of {a} is too low; let it charge first",
+        "nl": "De accu van {a} is te leeg; laat hem eerst opladen",
+    },
+    "SDK.Error.ConsumerProducts.CleaningRobot.Status.Lifted": {
+        "en": "{a} has been lifted; put it back on the floor",
+        "nl": "{a} is opgetild; zet hem terug op de vloer",
+    },
+    "SDK.Error.ConsumerProducts.CleaningRobot.Status.DustBoxNotInserted": {
+        "en": "The dust box of {a} is not inserted",
+        "nl": "Het stofreservoir van {a} zit er niet in",
+    },
+    "SDK.Error.ConsumerProducts.CleaningRobot.Status.AlreadyAtHome": {
+        "en": "{a} is already at its charging station",
+        "nl": "{a} staat al in het laadstation",
+    },
 }
 
 

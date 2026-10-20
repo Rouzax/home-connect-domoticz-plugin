@@ -49,8 +49,9 @@ def test_total_cap_and_rolling_window():
     b = make(c)
     spend(b, c, budget.AUTH, 250)
     spend(b, c, budget.BACKGROUND, 500)
-    spend(b, c, budget.COMMAND, 200)
-    assert b.acquire(budget.COMMAND).reason == "total"
+    spend(b, c, budget.STREAM, 40)
+    spend(b, c, budget.COMMAND, 90)
+    assert b.acquire(budget.COMMAND).reason == "ceiling"
     c.advance(86_400)
     assert b.acquire(budget.COMMAND).allowed
 
@@ -393,8 +394,8 @@ def test_threads_hit_ceilings_and_total_exactly():
     _hammer(b, [budget.COMMAND])
     snap = b.snapshot
     assert c.m - 1000.0 < 86_400
-    assert snap.total_used == budget.TOTAL
-    assert snap.used[budget.COMMAND] == budget.TOTAL - 250 - 540
+    assert snap.total_used == budget.TOTAL - budget.COMMAND_RESERVE
+    assert snap.used[budget.COMMAND] == budget.TOTAL - budget.COMMAND_RESERVE - 250 - 540
     assert snap.used[budget.AUTH] == 250
 
 
@@ -425,3 +426,92 @@ def test_a_neutral_probe_answer_releases_the_slot_and_restarts_the_wait():
     assert b.acquire(budget.BACKGROUND).reason == "brake"  # 600 s from the probe's send
     c.advance(10)
     assert b.acquire(budget.BACKGROUND).probe
+
+
+def test_starts_and_stops_are_limited_to_five_a_minute_each():
+    c = Clock()
+    b = make(c)
+    for _ in range(budget.ACTION_LIMIT):
+        assert b.acquire(budget.COMMAND, limit="start").allowed
+        b.record(error=False)
+        c.advance(1)
+    d = b.acquire(budget.COMMAND, limit="start")
+    assert (d.allowed, d.reason) == (False, "limiter")
+    assert d.wait_s == pytest.approx(55)
+    assert b.acquire(budget.COMMAND, limit="stop").allowed  # its own counter
+    assert b.acquire(budget.COMMAND).allowed  # other commands are not limited
+    c.advance(56)
+    assert b.acquire(budget.COMMAND, limit="start").allowed
+
+
+def test_a_start_refused_by_the_limiter_is_not_counted():
+    c = Clock()
+    b = make(c)
+    for _ in range(budget.ACTION_LIMIT):
+        b.acquire(budget.COMMAND, limit="start")
+    for _ in range(3):
+        assert b.acquire(budget.COMMAND, limit="start").reason == "limiter"
+    c.advance(60)
+    assert b.acquire(budget.COMMAND, limit="start").allowed
+
+
+def test_snapshot_says_when_the_next_start_is_allowed():
+    c = Clock()
+    b = make(c)
+    for _ in range(budget.ACTION_LIMIT):
+        b.acquire(budget.COMMAND, limit="start")
+        c.advance(2)
+    assert b.snapshot.action_free_at == {"start": 1060.0}
+    c.advance(60)
+    b.check(budget.COMMAND)
+    assert b.snapshot.action_free_at == {}
+
+
+def test_an_unknown_limit_is_a_programming_error():
+    b = make(Clock())
+    with pytest.raises(ValueError):
+        b.acquire(budget.COMMAND, limit="pause")
+
+
+def test_an_unanswered_attempt_is_marked_until_anything_answers():
+    c = Clock()
+    b = make(c)
+    b.acquire(budget.BACKGROUND)
+    b.record(error=True, counts=False, network=True)
+    assert b.snapshot.network_failed_mono == 1000.0
+    c.advance(5)
+    b.acquire(budget.BACKGROUND)
+    b.record(error=True, counts=True)  # a 409 is still an answer
+    assert b.snapshot.network_failed_mono == 0.0
+
+
+def test_commands_leave_the_last_70_for_token_refresh_and_stream_reconnects():
+    assert budget.COMMAND_RESERVE == 70
+    c = Clock()
+    b = make(c)
+    spend(b, c, budget.BACKGROUND, 500)
+    spend(b, c, budget.COMMAND, 380)
+    assert b.snapshot.total_used == 880
+    assert b.acquire(budget.COMMAND).reason == "ceiling"
+    assert budget.COMMAND in b.snapshot.exhausted
+    spend(b, c, budget.AUTH, 30)
+    spend(b, c, budget.STREAM, 40)
+    assert b.snapshot.total_used == budget.TOTAL
+    assert b.acquire(budget.AUTH).reason == "total"
+
+
+def test_the_snapshot_says_when_commands_are_allowed_again():
+    c = Clock(wall=1_800_000_000.0)
+    b = make(c)
+    assert b.snapshot.command_free_at == 0.0
+    spend(b, c, budget.BACKGROUND, 10, step=60.0)  # one a minute, the oldest first
+    spend(b, c, budget.BACKGROUND, 490)
+    spend(b, c, budget.COMMAND, 380)
+    first_minute = 1_800_000_000 // 60
+    # The oldest request must leave the window before the total drops under 880 again.
+    free_at = b.snapshot.command_free_at
+    assert free_at == (first_minute + budget.WINDOW_MINUTES) * 60
+    c.advance(free_at - c.w - 1)
+    assert b.acquire(budget.COMMAND).reason == "ceiling"
+    c.advance(1)
+    assert b.acquire(budget.COMMAND).allowed

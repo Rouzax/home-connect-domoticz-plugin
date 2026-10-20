@@ -61,6 +61,8 @@ class Refused:
     generation: int
     job: scheduler.Job
     reason: str
+    # How long the budget said to wait, when it said so (brake, block, pace, limiter).
+    wait_s: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -355,9 +357,9 @@ class RequestWorker(_Worker):
         if not self._admit(replace(job, not_before=self._mono() + wait_s * self._scale)):
             self._post(Refused(self.generation, job, "queue_full"))
 
-    def _refuse(self, job: scheduler.Job, reason: str) -> None:
+    def _refuse(self, job: scheduler.Job, reason: str, wait_s: float = 0.0) -> None:
         self._log("debug", "job_refused", kind=job.kind, reason=reason)
-        self._post(Refused(self.generation, job, reason))
+        self._post(Refused(self.generation, job, reason, wait_s))
 
     def _execute(self, job: scheduler.Job) -> None:
         if job.ttl_deadline and self._mono() > job.ttl_deadline:
@@ -372,17 +374,28 @@ class RequestWorker(_Worker):
             if job.auth_generation != auth_generation:
                 self._refuse(job, "stale")
                 return
-        decision = self._budget.acquire(job.budget_class, exempt_brake=job.kind == "revoke")
+        decision = self._budget.acquire(
+            job.budget_class, exempt_brake=job.kind == "revoke", limit=job.limit
+        )
         if not decision.allowed:
-            if job.priority == scheduler.PRIORITY_COMMAND or decision.reason in (
+            if self._waits_for_pace(job, decision):
+                self._requeue(job, decision.wait_s)
+            elif job.priority == scheduler.PRIORITY_COMMAND or decision.reason in (
                 "total",
                 "ceiling",
             ):
-                self._refuse(job, decision.reason)
+                self._refuse(job, decision.reason, decision.wait_s)
             else:
                 self._requeue(job, max(decision.wait_s, 1.0))
             return
         self._send(job, token if job.needs_token else None, decision)
+
+    def _waits_for_pace(self, job: scheduler.Job, decision: budget.Decision) -> bool:
+        """A command held back only by the overall pace waits its turn while its TTL allows; any
+        other refusal of a command is final, so the user hears about it at once (spec 7.6)."""
+        if job.priority != scheduler.PRIORITY_COMMAND or decision.reason != "pace":
+            return False
+        return not job.ttl_deadline or self._mono() + decision.wait_s < job.ttl_deadline
 
     def _classify(self, job: scheduler.Job, resp: hc_client.Response) -> tuple[str, str, bool]:
         """(category, error key, counts toward the brake) for an HTTP answer."""
@@ -403,13 +416,14 @@ class RequestWorker(_Worker):
         category, key = "", ""
         # The booking if anything below raises: an uncounted error, which still releases the
         # grant and the brake probe slot before the crash propagates.
-        error, counts, neutral = True, False, False
+        error, counts, neutral, network = True, False, False, False
         try:
             try:
                 answer: hc_client.Response = self._client.request(
                     job.method,
                     job.path,
                     token=token,
+                    json_body=job.body,
                     form=job.form,
                     accept_language=None if job.oauth else self._lang,
                 )
@@ -417,6 +431,7 @@ class RequestWorker(_Worker):
                 # No HTTP answer: booked in the ledger at acquire, never counted by the brake.
                 failure = str(exc)
                 counts = errors.counts_for_brake(errors.NETWORK)
+                network = True
             else:
                 resp = answer
                 category, key, counts = self._classify(job, answer)
@@ -424,7 +439,13 @@ class RequestWorker(_Worker):
                 # An OAuth success says nothing about the API endpoints the count guards.
                 neutral = job.oauth and not error
         finally:
-            self._budget.record(error=error, counts=counts, neutral=neutral, probe=decision.probe)
+            self._budget.record(
+                error=error,
+                counts=counts,
+                neutral=neutral,
+                probe=decision.probe,
+                network=network,
+            )
         if resp is None:
             retry = job.method == "GET" and not job.retried
             self._log(
@@ -542,18 +563,23 @@ class StreamWorker(_Worker):
         """Open the stream and book the attempt with exactly one budget.record()."""
         stream: hc_client.Stream | None = None
         failure = ""
-        error, counts = True, False  # the booking if open_stream raises anything unexpected
+        error, counts, network = (
+            True,
+            False,
+            False,
+        )  # the booking if open_stream raises anything unexpected
         try:
             try:
                 opened: hc_client.Stream = self._client.open_stream(token, self._lang)
             except hc_client.TransportError as exc:
                 failure = str(exc)
                 counts = errors.counts_for_brake(errors.NETWORK)
+                network = True
             else:
                 stream = opened
                 error, counts = opened.status != 200, True
         finally:
-            self._budget.record(error=error, counts=counts, probe=decision.probe)
+            self._budget.record(error=error, counts=counts, probe=decision.probe, network=network)
         if stream is None:
             self._log("debug", "stream_open", error=failure, outcome="error")
             self._post(StreamState(self.generation, False, False, failure))

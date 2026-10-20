@@ -5,10 +5,11 @@ unit is recorded in state.unit_kinds and reused for ever; that is also why optio
 devices wait until their writability is known instead of guessing.
 """
 
+import functools
 import math
 import time
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Container, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 
 import catalog
@@ -17,12 +18,38 @@ import persistence
 import text
 
 UNIT_STATE, UNIT_POWER, UNIT_DOOR, UNIT_PROGRESS, UNIT_TIME, UNIT_PROGRAM, UNIT_REMOTE = range(1, 8)
-# Reserved for the control units (spec 6.2): 8 selected-program selector, 9 actions selector,
-# 10 acknowledge push button. A unit number is permanent once created, so nothing else may
-# take these.
-RESERVED_CONTROL_UNITS = (8, 9, 10)
+# Control units (spec 6.2): the program selector, the actions selector and the acknowledge
+# button. A unit number is permanent once created.
+UNIT_PROGRAM_SELECT, UNIT_ACTIONS, UNIT_ACK = 8, 9, 10
 # Read-only selector for scripts: the operation state as a level that never changes meaning.
 UNIT_STATUS_CODE = 11
+# Delayed start as a clock-time selector (spec 6.3), on appliances that offer a delay.
+UNIT_DELAYED_START = 12
+# Fixed units whose levels come from Home Connect data rather than from code: their key list
+# travels in HCKeys, so a lost snapshot is recovered from the device as for a dynamic selector.
+DATA_DRIVEN_FIXED_UNITS = (UNIT_PROGRAM_SELECT,)
+# Units that exist only while AllowControl is on, hidden and shown once per transition (spec
+# 6.4). The program selector is not one of them: it also tells scripts, as a level that never
+# changes meaning, which program is selected or running.
+CONTROL_ONLY_UNITS = (UNIT_ACTIONS, UNIT_ACK, UNIT_DELAYED_START)
+# Action levels are a public contract for scenes and scripts, the same on every appliance:
+# never renumber or reuse one. Level 0 is "-", to which the selector always returns, so the
+# same action chosen twice runs twice. The door actions come last: an appliance without them
+# shows the levels before them only, which renumbers nothing.
+ACTION_LEVELS = {
+    "start": 10,
+    "stop": 20,
+    "pause": 30,
+    "resume": 40,
+    "open_door": 50,
+    "partly_open_door": 60,
+}
+_DOOR_ACTIONS = ("open_door", "partly_open_door")
+_DOOR_COMMANDS = frozenset({catalog.OPEN_DOOR, catalog.PARTLY_OPEN_DOOR})
+# Delayed-start levels are local clock times this many minutes apart, 00:00 at level 10. A
+# level's time is a public contract too: changing the step moves every stored timer or scene
+# level to another time.
+DELAY_STEP_MIN = 30
 # Status code levels are a public contract for scripts: never renumber or reuse one. Level 0
 # (unknown, hidden) is never written.
 STATUS_CODE_STATES = (
@@ -50,10 +77,12 @@ _TEXT_MAX = 200
 _UNIT_TEXT_MAX = 20
 _MINUTES_OPTIONS = {"Custom": "1;min"}
 # Home Connect sends min and max but usually no stepsize, and Domoticz then steps a setpoint by
-# 0.5. Whole units suit temperatures and counts; a time in seconds steps by one minute, as the
-# Home Connect app does. A stepsize Home Connect does send always wins.
+# 0.5. Whole units suit temperatures, counts and minutes. A stepsize Home Connect does send
+# always wins.
 _DEFAULT_STEP = "1"
-_DEFAULT_SECONDS_STEP = "60"
+# A time Home Connect counts in seconds (a cooking Duration) shows in minutes, as the Home Connect
+# app does; a typed 0.5 still gives 30 s. control converts a commanded value back (spec 6.3).
+SECONDS_PER_MINUTE = 60
 _NUMERIC_KINDS = frozenset({"setpoint", "temperature", "percentage", "custom", "minutes"})
 # No real reading comes near this; a larger number (still finite after json.loads) would overflow
 # time.localtime() in a finish time or fill a device with hundreds of digits.
@@ -69,7 +98,29 @@ _FIXED_KINDS = {
     UNIT_PROGRAM: "text",
     UNIT_REMOTE: "alert",
     UNIT_STATUS_CODE: "selector",
+    UNIT_PROGRAM_SELECT: "selector",
+    UNIT_ACTIONS: "selector",
+    UNIT_ACK: "push",
+    UNIT_DELAYED_START: "selector",
 }
+
+# What each fixed unit's description explains, and which of them send commands to the appliance.
+_FIXED_DESCRIPTIONS = {
+    UNIT_STATE: "state",
+    UNIT_POWER: "power",
+    UNIT_DOOR: "door",
+    UNIT_PROGRESS: "progress",
+    UNIT_TIME: "remaining",
+    UNIT_PROGRAM: "program",
+    UNIT_REMOTE: "remote",
+    UNIT_STATUS_CODE: "status_code",
+    UNIT_PROGRAM_SELECT: "program_select",
+    UNIT_ACK: "acknowledge",
+}
+_COMMAND_UNITS = frozenset(
+    {UNIT_POWER, UNIT_PROGRAM_SELECT, UNIT_ACTIONS, UNIT_ACK, UNIT_DELAYED_START}
+)
+_WRITABLE_KINDS = frozenset({"switch", "selector", "setpoint"})
 
 _KIND_TYPES = {
     "alert": ("Alert", 0),
@@ -115,6 +166,7 @@ class DeviceUpdate:
     has_value: bool = True
     image: int = 0  # built-in icon id, applied at creation only; 0 is the Domoticz default
     create: bool = True
+    description: str = ""  # applied at creation only, so a user's own text survives
 
 
 @dataclass(frozen=True)
@@ -136,6 +188,38 @@ def device_id(ha_id: str) -> str:
 def clock(epoch: float) -> str:
     """Local wall-clock time as shown to the user in device text."""
     return time.strftime("%H:%M", time.localtime(epoch))
+
+
+def delay_times() -> list[int]:
+    """Minutes after midnight of each delayed-start level, level 10 first."""
+    return list(range(0, 24 * 60, DELAY_STEP_MIN))
+
+
+def delay_level(minutes: int | None) -> int:
+    times = delay_times()
+    return 10 * (times.index(minutes) + 1) if minutes in times else 0
+
+
+def delay_minutes(level: int) -> int | None:
+    times = delay_times()
+    index = level // 10 - 1
+    return times[index] if level % 10 == 0 and 0 <= index < len(times) else None
+
+
+def clock_text(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def delay_key(app: model.Appliance) -> str | None:
+    """The delayed-start option the appliance offers, or None. Laundry offers FinishInRelative
+    ("ready at"), ovens and dishwashers StartInRelative ("start at") (spec 3.2a)."""
+    return pick_delay_key(set(_offered_options(app)) | set(app.options))
+
+
+def pick_delay_key(keys: Iterable[object]) -> str | None:
+    """The delayed-start key among `keys`; FinishInRelative wins when both are present."""
+    found = set(keys)
+    return next((k for k in (catalog.FINISH_IN, catalog.START_IN) if k in found), None)
 
 
 def display_names(
@@ -218,7 +302,7 @@ def _bare(value: object) -> str:
     return str(value).rsplit(".", 1)[-1]
 
 
-def _number(value: object) -> float | None:
+def finite_number(value: object) -> float | None:
     """A finite, plausibly sized number, else None. json.loads accepts NaN, Infinity, 1e400
     (inf) and integers too large for a float, all of which arrive from Home Connect payloads."""
     if isinstance(value, bool) or not isinstance(value, int | float):
@@ -250,12 +334,14 @@ def _door_open(value: model.Value | None) -> bool:
     return value is not None and _bare(value.value) == "Open"
 
 
-def _constraints(detail: dict) -> dict:
-    constraints = detail.get("constraints")
+def constraints_of(detail: dict | None) -> dict:
+    """The constraints dict of an option or setting description, {} when there is none."""
+    constraints = detail.get("constraints") if detail is not None else None
     return constraints if isinstance(constraints, dict) else {}
 
 
-def _unit_label(value: model.Value | None, detail: dict) -> str:
+def key_unit(value: model.Value | None, detail: dict) -> str:
+    """A key's unit: from its reported value, else from the detail that declares it."""
     return (value.unit if value is not None else "") or str(detail.get("unit") or "")
 
 
@@ -281,7 +367,7 @@ def _readonly_kind(key: str, value: model.Value | None, detail: dict) -> str:
         return "door"
     if _shape(value, detail) == "number":
         units = {"°C": "temperature", "%": "percentage", "seconds": "minutes"}
-        return units.get(_unit_label(value, detail), "custom")
+        return units.get(key_unit(value, detail), "custom")
     return "text"
 
 
@@ -291,7 +377,7 @@ def _writable_kind(value: model.Value | None, detail: dict) -> str:
         return "switch"
     if shape == "number":
         return "setpoint"
-    return "selector" if _constraints(detail).get("allowedvalues") else "text"
+    return "selector" if constraints_of(detail).get("allowedvalues") else "text"
 
 
 def _offered_options(app: model.Appliance) -> list[str]:
@@ -306,6 +392,31 @@ def _offered_options(app: model.Appliance) -> list[str]:
     return keys
 
 
+def value_label(app: model.Appliance, value: str, lang: str) -> str:
+    """The level name of an enum value: a name the catalog or the appliance gives it, else the
+    key's."""
+    named = text.clean_label(
+        catalog.value_name(app.value_names, value, lang) or "", _LEVEL_NAME_MAX
+    )
+    return named or catalog.humanize(value)
+
+
+def program_label(app: model.Appliance, program: str, lang: str) -> str:
+    """The level name of a program on the program selector."""
+    return text.clean_label(catalog.name_for(app.names, program, lang), _LEVEL_NAME_MAX)
+
+
+def _selector_options(names: list[str], **custom: str) -> dict[str, str]:
+    """A selector's whole Options; `custom` adds keys or overrides a default."""
+    return {
+        "LevelNames": "|".join(names),
+        "LevelActions": "|" * (len(names) - 1),
+        "LevelOffHidden": "false",
+        "SelectorStyle": "1",
+        **custom,
+    }
+
+
 def _selector(
     state: persistence.State,
     app: model.Appliance,
@@ -317,48 +428,60 @@ def _selector(
     present: bool,
 ) -> tuple[int, dict]:
     # Keys are joined with "|" into HCKeys, so only well-formed keys may become levels.
-    allowed = [v for v in _constraints(detail).get("allowedvalues", []) if text.valid_key(v)]
+    allowed = [v for v in constraints_of(detail).get("allowedvalues", []) if text.valid_key(v)]
     current = value.value if value is not None and text.valid_key(value.value) else None
     keys = _levels(state, dev, unit, allowed + ([current] if current else []))
-    names = [catalog.word("not_available", lang)] + [
-        text.clean_label(app.value_names.get(k) or "", _LEVEL_NAME_MAX) or catalog.humanize(k)
-        for k in keys
-    ]
+    names = [catalog.word("not_available", lang)] + [value_label(app, k, lang) for k in keys]
     level = 10 * (keys.index(current) + 1) if present and current in keys else 0
     # The plugin owns the whole Options, custom keys included: Domoticz drops HCKeys when the user
     # saves the selector, and the device writer restores whatever differs from this (spec 4.4).
-    options = {
-        "LevelNames": "|".join(names),
-        "LevelActions": "|" * len(keys),
-        "LevelOffHidden": "false",
-        "SelectorStyle": "1",
-        "HCKeys": "|" + "|".join(keys),
-    }
-    return level, options
+    return level, _selector_options(names, HCKeys="|" + "|".join(keys))
 
 
-def _setpoint_options(detail: dict, unit_label: str) -> dict[str, str]:
+def setpoint_scale(unit_label: str) -> int:
+    """Wire units per shown unit of a setpoint: 60 for seconds shown as minutes, else 1."""
+    return SECONDS_PER_MINUTE if unit_label == "seconds" else 1
+
+
+def setpoint_unit(unit_label: str, lang: str) -> str:
+    return "min" if setpoint_scale(unit_label) > 1 else catalog.unit_text(unit_label, lang)
+
+
+def scaled_bound(bound: float, scale: int, *, upper: bool) -> float:
+    """A range bound in the card's unit. A converted bound rounds inwards to two decimals, so
+    1 s reads as 0.02 min, a value that is itself inside the range."""
+    if scale == 1:
+        return bound
+    shifted = bound / scale * 100
+    return (math.floor(shifted) if upper else math.ceil(shifted)) / 100
+
+
+def setpoint_svalue(wire: float, scale: int) -> str:
+    """A setpoint's sValue: the wire value in the card's unit, to two decimals when converted
+    (80 s is 1.33 min, not 1.3333333333333333)."""
+    return str(float(wire if scale == 1 else round(wire / scale, 2)))
+
+
+def _setpoint_options(detail: dict, unit_label: str, lang: str) -> dict[str, str]:
     options: dict[str, str] = {}
-    constraints = _constraints(detail)
-    for src, dst in (("min", "ValueMin"), ("max", "ValueMax")):
-        bound = _number(constraints.get(src))
-        if bound is not None:
-            options[dst] = _fmt(bound)
+    constraints = constraints_of(detail)
     unit_label = text.clean_label(unit_label or str(detail.get("unit") or ""), _UNIT_TEXT_MAX)
-    step = _number(constraints.get("stepsize"))
-    if step is not None and step > 0:
-        options["ValueStep"] = _fmt(step)
-    else:
-        options["ValueStep"] = _DEFAULT_SECONDS_STEP if unit_label == "seconds" else _DEFAULT_STEP
+    scale = setpoint_scale(unit_label)
+    for src, dst in (("min", "ValueMin"), ("max", "ValueMax")):
+        bound = finite_number(constraints.get(src))
+        if bound is not None:
+            options[dst] = _fmt(scaled_bound(bound, scale, upper=dst == "ValueMax"))
+    step = finite_number(constraints.get("stepsize"))
+    options["ValueStep"] = _fmt(step / scale) if step is not None and step > 0 else _DEFAULT_STEP
     if unit_label:
-        options["ValueUnit"] = unit_label
+        options["ValueUnit"] = setpoint_unit(unit_label, lang)
     return options
 
 
-def _number_options(kind: str, unit_label: str) -> dict[str, str]:
+def _number_options(kind: str, unit_label: str, lang: str) -> dict[str, str]:
     if kind == "minutes":
         return dict(_MINUTES_OPTIONS)
-    unit_label = text.clean_label(unit_label, _UNIT_TEXT_MAX)
+    unit_label = text.clean_label(catalog.unit_text(unit_label, lang), _UNIT_TEXT_MAX)
     return {"Custom": f"1;{unit_label}"} if kind == "custom" and unit_label else {}
 
 
@@ -377,17 +500,17 @@ def _value_update(
 ) -> DeviceUpdate:
     item = catalog.name_for(app.names, key, lang)
     info = catalog.special(key)
-    number = _number(value.value) if value is not None else None
-    unit_label = _unit_label(value, detail)
+    number = finite_number(value.value) if value is not None else None
+    unit_label = key_unit(value, detail)
     # Nothing usable reported: create the unit but write no value (see DeviceUpdate). A selector
     # is exempt, its level 0 "Not available" is a real state.
     unusable = value is None or (kind in _NUMERIC_KINDS and number is None)
     if unusable and kind != "selector":
         type_name, switchtype = _KIND_TYPES[kind]
         if kind == "setpoint":
-            options = _setpoint_options(detail, unit_label)
+            options = _setpoint_options(detail, unit_label, lang)
         else:
-            options = _number_options(kind, unit_label)
+            options = _number_options(kind, unit_label, lang)
         return DeviceUpdate(
             dev,
             unit,
@@ -408,8 +531,9 @@ def _value_update(
         level, options = _selector(state, app, dev, unit, value, detail, lang, present)
         return _update(dev, unit, label, item, kind, level, str(level), options=options)
     if kind == "setpoint":
-        options = _setpoint_options(detail, unit_label)
-        svalue = str(number) if number is not None else ""
+        options = _setpoint_options(detail, unit_label, lang)
+        scale = setpoint_scale(unit_label)
+        svalue = setpoint_svalue(number, scale) if number is not None else ""
         return _update(dev, unit, label, item, kind, 0, svalue, options=options)
     if kind in ("temperature", "percentage", "custom", "minutes"):
         if number is not None and kind == "minutes":
@@ -417,11 +541,11 @@ def _value_update(
         if number is not None and info and info.resolution:
             number = round(number / info.resolution) * info.resolution
         svalue = _fmt(number) if number is not None else ""
-        options = _number_options(kind, unit_label)
+        options = _number_options(kind, unit_label, lang)
         deadband = info.deadband if info else 0.0
         return _update(dev, unit, label, item, kind, 0, svalue, options=options, deadband=deadband)
     raw = value.value if value is not None else ""
-    shown = app.value_names.get(raw) if isinstance(raw, str) else None
+    shown = catalog.value_name(app.value_names, raw, lang) if isinstance(raw, str) else None
     if isinstance(raw, bool):
         shown = catalog.word("yes" if raw else "no", lang)
     elif not shown and isinstance(raw, str) and ".EnumType." in raw and text.valid_key(raw):
@@ -430,20 +554,30 @@ def _value_update(
     return _update(dev, unit, label, item, "text", 0, text.escape(shown))
 
 
+def _main_setting(key: str) -> bool:
+    """Settings that are an appliance's main controls and so stay shown: a fridge-freezer has no
+    programs, and its setpoints and super modes are what a user operates it by."""
+    last = key.rsplit(".", 1)[-1]
+    return key.startswith("Refrigeration.") and last.startswith(
+        ("SetpointTemperature", "SuperMode")
+    )
+
+
 def _dynamic(update: DeviceUpdate, key: str, kind: str) -> DeviceUpdate:
     """Every dynamic unit carries its Home Connect key and kind in its own Options, so a lost
     snapshot is rebuilt from the devices themselves, never guessed from names (spec 4.4). A key
-    the catalog does not know is created hidden (spec 6.4); Used only applies at creation."""
+    the catalog does not know is created hidden (spec 6.4), and so is every appliance setting
+    (child lock, sabbath mode): rarely looked at, they would bury the state and program cards.
+    Used only applies at creation, so a device the user shows stays shown."""
+    shown = catalog.known(key) and (".Setting." not in key or _main_setting(key))
     return replace(
-        update,
-        options={**update.options, "HCKey": key, "HCKind": kind},
-        used=1 if catalog.known(key) else 0,
+        update, options={**update.options, "HCKey": key, "HCKind": kind}, used=1 if shown else 0
     )
 
 
 def _option_number(app: model.Appliance, key: str) -> float | None:
     value = app.options.get(key)
-    return _number(value.value) if value is not None else None
+    return finite_number(value.value) if value is not None else None
 
 
 def _finish_at(app: model.Appliance, state: str | None, now: float) -> float | None:
@@ -561,13 +695,15 @@ def _run_cards(
         out.append(reset(finished, app.has_programs()))
         return out
     progress = app.options.get(catalog.PROGRESS)
-    percent = _number(progress.value) if progress is not None else None
+    percent = finite_number(progress.value) if progress is not None else None
     if percent is not None:
+        # An appliance can report a value outside a percentage; the gauge only shows 0..100.
+        percent = min(max(percent, 0.0), 100.0)
         out.append(
             _update(dev, UNIT_PROGRESS, label, progress_item, "percentage", 0, _fmt(percent))
         )
     remaining = app.options.get(catalog.REMAINING) or app.options.get(catalog.ELAPSED)
-    seconds = _number(remaining.value) if remaining is not None else None
+    seconds = finite_number(remaining.value) if remaining is not None else None
     if seconds is not None:
         out.append(time_update(_ceil_minutes(seconds)))
     finish_at = _finish_at(app, state, now)
@@ -603,12 +739,7 @@ def _status_code(
     names = [catalog.word("unknown", lang)]
     names += [catalog.state_name(s, lang) for s in STATUS_CODE_STATES]
     names.append(catalog.word("offline", lang))
-    options = {
-        "LevelNames": "|".join(names),
-        "LevelActions": "|" * (len(names) - 1),
-        "LevelOffHidden": "true",
-        "SelectorStyle": "1",
-    }
+    options = _selector_options(names, LevelOffHidden="true")
     item = catalog.word("status_code", lang)
     update = _update(
         dev, UNIT_STATUS_CODE, label, item, "selector", level, str(level), options=options
@@ -675,6 +806,85 @@ def _no_device(key: str, value: model.Value | None) -> bool:
     return value is not None and isinstance(value.value, dict | list)
 
 
+def _program_selector(
+    app: model.Appliance, state: persistence.State, dev: str, label: str, lang: str
+) -> DeviceUpdate:
+    """Unit 8: the selected program, or the one that runs, as a stable level (spec 6.3)."""
+    running = app.active_program and _phase(app, app.operation_state()) != "idle"
+    current = app.active_program if running else app.selected_program
+    candidates = [*app.cache.programs, app.selected_program, app.active_program]
+    keys = _levels(state, dev, UNIT_PROGRAM_SELECT, [k for k in candidates if text.valid_key(k)])
+    names = ["-"] + [program_label(app, k, lang) for k in keys]
+    level = 10 * (keys.index(current) + 1) if current in keys else 0
+    # The plugin owns the whole Options, HCKeys included (spec 4.4).
+    options = _selector_options(names, HCKeys="|" + "|".join(keys))
+    item = catalog.word("program_select", lang)
+    return _update(
+        dev, UNIT_PROGRAM_SELECT, label, item, "selector", level, str(level), options=options
+    )
+
+
+def _door_actions(app: model.Appliance) -> bool:
+    return app.type == "Oven" or bool(_DOOR_COMMANDS & set(app.cache.commands))
+
+
+def _actions(app: model.Appliance, dev: str, label: str, lang: str) -> DeviceUpdate:
+    doors = _door_actions(app)
+    shown = [name for name in ACTION_LEVELS if doors or name not in _DOOR_ACTIONS]
+    names = ["-"] + [catalog.word(f"action_{name}", lang) for name in shown]
+    item = catalog.word("actions", lang)
+    options = _selector_options(names)
+    return _update(dev, UNIT_ACTIONS, label, item, "selector", 0, "0", options=options)
+
+
+def _acknowledge(dev: str, label: str, lang: str) -> DeviceUpdate:
+    # A push button has no state of its own: created, never given a value.
+    item = catalog.word("acknowledge", lang)
+    return replace(_update(dev, UNIT_ACK, label, item, "push", 0, "Off"), has_value=False)
+
+
+def _delayed_start(
+    app: model.Appliance, state: persistence.State, dev: str, label: str, lang: str
+) -> DeviceUpdate | None:
+    key = delay_key(app)
+    if key is None:
+        return None
+    names = ["-"] + [clock_text(m) for m in delay_times()]
+    # The held time is the plugin's own choice, not a Home Connect value (spec 6.3).
+    level = delay_level(state.delayed_start.get(app.ha_id))
+    item = catalog.word("ready_at_name" if key == catalog.FINISH_IN else "start_at_name", lang)
+    options = _selector_options(names)
+    return _update(
+        dev, UNIT_DELAYED_START, label, item, "selector", level, str(level), options=options
+    )
+
+
+def _control(
+    app: model.Appliance,
+    state: persistence.State,
+    dev: str,
+    label: str,
+    lang: str,
+    allow_control: bool,
+    blocked: Container[tuple[str, int]],
+) -> list[DeviceUpdate]:
+    out: list[DeviceUpdate] = []
+    if app.has_programs():
+        # A program selector whose level keys were lost is left exactly as it is: a fresh map
+        # from today's program list would give a stored scene or timer level another program,
+        # and writing HCKeys would unblock it at the next start (spec 4.4).
+        if (dev, UNIT_PROGRAM_SELECT) not in blocked:
+            out.append(_program_selector(app, state, dev, label, lang))
+        if allow_control:
+            out.append(_actions(app, dev, label, lang))
+            delayed = _delayed_start(app, state, dev, label, lang)
+            if delayed is not None:
+                out.append(delayed)
+    if allow_control and catalog.ACKNOWLEDGE in app.cache.commands:
+        out.append(_acknowledge(dev, label, lang))
+    return out
+
+
 def plan_appliance(
     app: model.Appliance,
     state: persistence.State,
@@ -683,12 +893,17 @@ def plan_appliance(
     stream_stale: bool,
     label: str,
     warnings: list[str] | None = None,
+    *,
+    allow_control: bool = False,
+    blocked: Container[tuple[str, int]] = (),
 ) -> list[DeviceUpdate]:
     """Device updates for one appliance. A key that finds no free unit is skipped and reported
     in `warnings` (one entry per key per call, no haId) for the caller to log once, since this
-    module cannot log (spec 6.2)."""
+    module cannot log (spec 6.2). `blocked` holds the (DeviceID, unit) selectors whose level
+    keys could not be recovered (domoticz_api.recover_from_devices)."""
     dev = device_id(app.ha_id)
     out = _fixed(app, dev, label, lang, now_wall, stream_stale)
+    out += _control(app, state, dev, label, lang, allow_control, blocked)
 
     def allocate(key: str) -> int | None:
         unit = _allocate(state, dev, key)
@@ -702,7 +917,8 @@ def plan_appliance(
         if _no_device(key, value):
             return
         unit = allocate(key)
-        if unit is None:
+        # A blocked selector is never planned, for the reason _control gives for unit 8.
+        if unit is None or (dev, unit) in blocked:
             return
         kind = _kind(state, dev, unit, wanted)
         update = _value_update(
@@ -775,7 +991,55 @@ def plan_appliance(
         svalue = shown if present else catalog.word("no_notification", lang)
         update = _update(dev, unit, label, item, kind, level, svalue)
         out.append(_dynamic(update, key, kind))
-    return _unique_names(_with_images(out, state, dev, app.type))
+    return _unique_names(_with_descriptions(_with_images(out, state, dev, app.type), app, lang))
+
+
+@functools.cache
+def _status_code_levels(lang: str) -> str:
+    levels = [f"{STATUS_CODE_LEVELS[s]} {catalog.state_name(s, lang)}" for s in STATUS_CODE_STATES]
+    levels.append(f"{STATUS_CODE_OFFLINE} {catalog.word('offline', lang)}")
+    return ", ".join(levels)
+
+
+def _dynamic_description(key: str, kind: str) -> tuple[str, bool]:
+    """(description name, sends commands) for a unit allocated per key. The kind, permanent once
+    created, tells a writable device from a read-only one."""
+    writable = kind in _WRITABLE_KINDS
+    if catalog.is_favourite(key):
+        return "favourite", False
+    if ".Event." in key:
+        return "event", False
+    if ".Setting." in key:
+        return ("setting", True) if writable else ("setting_reading", False)
+    if ".Option." in key:
+        return ("option", True) if writable else ("option_reading", False)
+    return "reading", False
+
+
+@functools.cache
+def _description(name: str, lang: str, control: bool) -> str:
+    """Planned on every pass but used only when a unit is created, so each text is built once
+    per language and then reused."""
+    return catalog.description(name, lang, control, levels=_status_code_levels(lang))
+
+
+def _with_descriptions(
+    updates: list[DeviceUpdate], app: model.Appliance, lang: str
+) -> list[DeviceUpdate]:
+    out = []
+    for update in updates:
+        key = update.options.get("HCKey")
+        if key:
+            name, control = _dynamic_description(key, update.options.get("HCKind", ""))
+        elif update.unit == UNIT_DELAYED_START:
+            name = "ready_at" if delay_key(app) == catalog.FINISH_IN else "start_at"
+            control = True
+        elif update.unit == UNIT_ACTIONS:
+            name, control = ("actions_doors" if _door_actions(app) else "actions"), True
+        else:
+            name, control = _FIXED_DESCRIPTIONS[update.unit], update.unit in _COMMAND_UNITS
+        out.append(replace(update, description=_description(name, lang, control)))
+    return out
 
 
 def _with_images(
@@ -815,32 +1079,47 @@ def _unique_names(updates: list[DeviceUpdate]) -> list[DeviceUpdate]:
     return [final[i] for i in range(len(updates))]
 
 
+def apply_overlay(
+    updates: list[DeviceUpdate], overlay: Mapping[tuple[str, int], tuple[int, str]]
+) -> list[DeviceUpdate]:
+    """Show commanded values at once, as requests, until Home Connect confirms or refuses them
+    (spec 7.6): the one sanctioned exception to writing only reported values (spec 6.4)."""
+    out = []
+    for update in updates:
+        shown = overlay.get((update.device_id, update.unit))
+        if shown is None:
+            out.append(update)
+        else:
+            out.append(replace(update, nvalue=shown[0], svalue=shown[1], has_value=True))
+    return out
+
+
 # Short on purpose: the card is a small tile, and a longer text needs a scrollbar.
 _ACCOUNT_TEXT = {
-    "AUTHORIZED": ("Authorized", "Geautoriseerd"),
-    "UNAUTHORIZED": ("Starting authorization", "Autorisatie wordt gestart"),
-    "AWAITING_USER": ("Authorization needed", "Autorisatie nodig"),
+    "AUTHORIZED": ("Signed in", "Aangemeld"),
+    "UNAUTHORIZED": ("Starting sign-in", "Aanmelden wordt gestart"),
+    "AWAITING_USER": ("Sign-in needed", "Aanmelden nodig"),
     "EXPIRED_CODE": (
-        "Code expired: choose Re-authorize",
-        "Code verlopen: kies Opnieuw autoriseren",
+        'Code expired: choose "Sign in again"',
+        'Code verlopen: kies "Opnieuw aanmelden"',
     ),
     "NEEDS_REAUTH": (
-        "Authorization lost: choose Re-authorize",
-        "Autorisatie verloren: kies Opnieuw autoriseren",
+        'Sign-in lost: choose "Sign in again"',
+        'Aanmelding verloren: kies "Opnieuw aanmelden"',
     ),
     "NEEDS_USER_ACTION": ("Action needed: {message}", "Actie nodig: {message}"),
     "SIGNED_OUT": (
-        "Signed out (turn off Sign out to authorize)",
-        "Afgemeld (zet Sign out uit om te autoriseren)",
+        "Signed out (turn off Sign out to sign in)",
+        "Afgemeld (zet Sign out uit om je aan te melden)",
     ),
 }
-# While a Re-authorize is pending the "choose Re-authorize" hint has been followed already.
+# While a Sign in again is pending the "choose Sign in again" hint has been followed already.
 _ACCOUNT_PENDING = {
     "EXPIRED_CODE": ("Code expired", "Code verlopen"),
-    "NEEDS_REAUTH": ("Authorization lost", "Autorisatie verloren"),
+    "NEEDS_REAUTH": ("Sign-in lost", "Aanmelding verloren"),
 }
 _ACTION_NEEDED = ("Action needed", "Actie nodig")
-_CHOOSE_REAUTHORIZE = ("Choose Re-authorize", "Kies Opnieuw autoriseren")
+_CHOOSE_REAUTHORIZE = ('Choose "Sign in again"', 'Kies "Opnieuw aanmelden"')
 _AGAIN = ("Again: {link}", "Opnieuw: {link}")
 _CODE = ("Code {code} (until {until})", "Code {code} (tot {until})")
 _CODE_ONLY = ("Code {code}", "Code {code}")
@@ -905,19 +1184,22 @@ def _account_text(view: AccountView, lang: str) -> str:
     return line + bullets([link, code, hint, note])
 
 
-def plan_account(view: AccountView, lang: str) -> list[DeviceUpdate]:
+def plan_account(view: AccountView, lang: str, shown: bool = True) -> list[DeviceUpdate]:
+    """The account units. `shown` is their Used value when they are created, so a unit recreated
+    while signed in starts hidden like the rest; an existing unit's Used is never touched."""
     message = _account_text(view, lang)
-    actions = {
-        "LevelNames": "|".join(
-            ["-", catalog.word("reauthorize", lang), catalog.word("refresh", lang)]
-        ),
-        "LevelActions": "||",
-        "LevelOffHidden": "false",
-        "SelectorStyle": "0",
-    }
+    names = ["-", catalog.word("reauthorize", lang), catalog.word("refresh", lang)]
+    actions = _selector_options(names, SelectorStyle="0")
     return [
         DeviceUpdate(
-            ACCOUNT_DEVICE, ACCOUNT_TEXT, catalog.word("account", lang), "Text", 0, message
+            ACCOUNT_DEVICE,
+            ACCOUNT_TEXT,
+            catalog.word("account", lang),
+            "Text",
+            0,
+            message,
+            used=int(shown),
+            description=catalog.description("account", lang),
         ),
         DeviceUpdate(
             ACCOUNT_DEVICE,
@@ -928,6 +1210,8 @@ def plan_account(view: AccountView, lang: str) -> list[DeviceUpdate]:
             "0",
             options=actions,
             switchtype=18,
+            used=int(shown),
+            description=catalog.description("account_actions", lang),
         ),
         DeviceUpdate(
             ACCOUNT_DEVICE,
@@ -936,7 +1220,8 @@ def plan_account(view: AccountView, lang: str) -> list[DeviceUpdate]:
             "Custom",
             0,
             str(view.calls),
-            options={"Custom": "1;calls"},
+            options={"Custom": f"1;{catalog.unit_text('calls', lang)}"},
             used=0,
+            description=catalog.description("calls", lang),
         ),
     ]

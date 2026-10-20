@@ -1,3 +1,4 @@
+import auth
 import catalog
 
 
@@ -66,3 +67,76 @@ def test_catalog_names_are_unique_within_a_domain():
                 if k.split(".")[0] in (domain, "BSH")
             ]
             assert len(names) == len(set(names)), (lang, domain)
+
+
+def test_delay_options_are_named_like_their_unit():
+    for key, en, nl in (
+        (catalog.START_IN, "Start at", "Start om"),
+        (catalog.FINISH_IN, "Ready at", "Klaar om"),
+    ):
+        assert catalog.name_for({}, key, "en") == en
+        assert catalog.name_for({}, key, "nl") == nl
+
+
+def test_english_leftovers_have_dutch_names():
+    for key, nl in (
+        ("Cooking.Oven.Event.EcolysisRequired", "Ecolysis-reiniging nodig"),
+        ("BSH.Common.Option.SmartEnergyService.SmartStartEnabled", "Slimme start"),
+    ):
+        assert catalog.name_for({key: "English name"}, key, "nl") == nl
+        assert catalog.known(key)
+
+
+def test_catalog_corrects_home_connect_typos_in_program_names():
+    for key, sent, nl in (
+        ("LaundryCare.Dryer.Program.Mix", "MIx", "Mix"),
+        ("LaundryCare.Dryer.Program.Super40", "Super Quick 40`", "Super Quick 40"),
+        ("LaundryCare.Dryer.Program.InBasket", "Wol in droofkorf", "Wol in droogkorf"),
+    ):
+        assert catalog.name_for({key: sent}, key, "nl") == nl
+
+
+def test_value_names_win_over_english_and_fill_numbered_colours():
+    custom = "BSH.Common.EnumType.AmbientLightColor.CustomColor"
+    assert catalog.value_name({custom: "Custom color"}, custom, "nl") == "Eigen kleur"
+    assert catalog.value_name({}, custom, "en") == "Custom colour"
+    colour = "BSH.Common.EnumType.AmbientLightColor.Color30"
+    assert catalog.value_name({}, colour, "nl") == "Kleur 30"
+    assert catalog.value_name({}, colour, "en") == "Colour 30"
+    named = "BSH.Common.EnumType.AmbientLightColor.Color40"
+    assert catalog.value_name({named: "koud wit"}, named, "nl") == "koud wit"
+    assert catalog.value_name({}, "X.Y.EnumType.Thing.Color3", "nl") is None
+    assert catalog.value_name({}, "X.Y.EnumType.Thing.Odd", "nl") is None
+
+
+def test_units_of_measure_are_translated():
+    assert catalog.unit_text("calls", "nl") == "aanroepen"
+    assert catalog.unit_text("°C", "nl") == "°C"
+
+
+def test_every_sign_in_state_has_plain_words_for_the_log():
+    for state in auth.AuthState:
+        words = catalog.sign_in_state(state.value)
+        assert words[0].islower() and "_" not in words and state.value not in words, state
+    assert (
+        catalog.sign_in_state("NEEDS_USER_ACTION") == "action needed in your Home Connect account"
+    )
+
+
+def test_account_notes_use_the_sign_in_wording():
+    assert catalog.note("auth_exhausted", "en") == "Sign-in budget used up; try later"
+    assert catalog.note("auth_exhausted", "nl") == "Aanmeldbudget op; probeer later"
+    assert catalog.note("denied", "en") == "Sign-in denied"
+    assert catalog.note("denied", "nl") == "Aanmelding geweigerd"
+
+
+def test_dishwasher_options_use_the_home_connect_app_names():
+    for key, en, nl in (
+        ("Dishcare.Dishwasher.Option.SilenceOnDemand", "Silence on demand", "Geluid dempen"),
+        ("Dishcare.Dishwasher.Option.BrillianceDry", "Brilliance Dry", "GlansDroog"),
+        ("Dishcare.Dishwasher.Option.VarioSpeedPlus", "VarioSpeed Plus", "VarioSpeedPlus"),
+        ("Dishcare.Dishwasher.Option.HygienePlus", "Hygiene Plus", "HygiënePlus"),
+        ("Dishcare.Dishwasher.Option.IntensivZone", "Intensive Zone", "IntensiveZone"),
+    ):
+        assert catalog.name_for({}, key, "en") == en
+        assert catalog.name_for({}, key, "nl") == nl

@@ -228,11 +228,13 @@ def test_selectors_always_carry_their_custom_keys():
     del app.options[SPIN]  # not offered now: the "Not available" path must keep them too
     for _ in range(2):
         _, units = plan(app, state)
-        selectors = [u for u in units.values() if u.type_name == "Selector Switch"]
+        selectors = [u for n, u in units.items() if u.type_name == "Selector Switch" and n >= 20]
         assert selectors
         for sel in selectors:
             assert {"HCKey", "HCKind", "HCKeys", "LevelNames"} <= set(sel.options)
             assert sel.options["HCKeys"].count("|") == sel.options["LevelNames"].count("|")
+        program = units[planner.UNIT_PROGRAM_SELECT].options
+        assert program["HCKeys"].count("|") == program["LevelNames"].count("|")
 
 
 def test_levels_are_append_only_and_kinds_stick():
@@ -435,7 +437,7 @@ def test_account_devices():
     assert "ABCD-EFGH" in units[planner.ACCOUNT_TEXT].svalue
     assert "09:45" in units[planner.ACCOUNT_TEXT].svalue
     actions = units[planner.ACCOUNT_ACTIONS]
-    assert actions.options["LevelNames"] == "-|Re-authorize|Refresh appliances"
+    assert actions.options["LevelNames"] == "-|Sign in again|Refresh appliances"
     assert (actions.nvalue, actions.svalue) == (0, "0")
     assert (units[planner.ACCOUNT_CALLS].svalue, units[planner.ACCOUNT_CALLS].used) == ("17", 0)
     signed = by_unit(
@@ -736,7 +738,7 @@ def test_renaming_for_uniqueness_never_touches_a_user_name(domoticz):
 
 VERIFY = "https://api.home-connect.com/security/oauth/device_verify?user_code=ABCD-EFGH&x=1"
 ESCAPED = VERIFY.replace("&", "&amp;")
-LABEL = {"en": "Log in to Home Connect", "nl": "Inloggen bij Home Connect"}
+LABEL = {"en": "Sign in to Home Connect", "nl": "Aanmelden bij Home Connect"}
 REAUTH_STATES = ("AUTHORIZED", "NEEDS_REAUTH", "NEEDS_USER_ACTION")
 
 
@@ -770,7 +772,7 @@ CODE_ITEM = {"en": "Code ABCD-EFGH (until 09:45)", "nl": "Code ABCD-EFGH (tot 09
 
 
 def test_awaiting_user_is_a_short_line_and_a_link_and_code_list():
-    head = {"en": "Authorization needed", "nl": "Autorisatie nodig"}
+    head = {"en": "Sign-in needed", "nl": "Aanmelden nodig"}
     for lang in ("en", "nl"):
         svalue = pending_text("AWAITING_USER", VERIFY, lang)
         assert svalue.split("<ul>", 1)[0] == head[lang]
@@ -781,10 +783,10 @@ def test_awaiting_user_is_a_short_line_and_a_link_and_code_list():
 
 def test_reauthorize_states_use_a_short_line_and_the_same_two_bullets():
     heads = {
-        ("AUTHORIZED", "en"): "Authorized",
-        ("AUTHORIZED", "nl"): "Geautoriseerd",
-        ("NEEDS_REAUTH", "en"): "Authorization lost",
-        ("NEEDS_REAUTH", "nl"): "Autorisatie verloren",
+        ("AUTHORIZED", "en"): "Signed in",
+        ("AUTHORIZED", "nl"): "Aangemeld",
+        ("NEEDS_REAUTH", "en"): "Sign-in lost",
+        ("NEEDS_REAUTH", "nl"): "Aanmelding verloren",
         ("NEEDS_USER_ACTION", "en"): "Action needed: accept terms",
         ("NEEDS_USER_ACTION", "nl"): "Actie nodig: accept terms",
     }
@@ -802,13 +804,14 @@ def test_reauthorize_states_use_a_short_line_and_the_same_two_bullets():
 
 def test_single_line_states_are_short():
     expected = {
-        ("NEEDS_REAUTH", "en"): "Authorization lost: choose Re-authorize",
-        ("NEEDS_REAUTH", "nl"): "Autorisatie verloren: kies Opnieuw autoriseren",
-        ("SIGNED_OUT", "en"): "Signed out (turn off Sign out to authorize)",
-        ("SIGNED_OUT", "nl"): "Afgemeld (zet Sign out uit om te autoriseren)",
-        ("EXPIRED_CODE", "en"): "Code expired: choose Re-authorize",
-        ("EXPIRED_CODE", "nl"): "Code verlopen: kies Opnieuw autoriseren",
-        ("AUTHORIZED", "en"): "Authorized",
+        ("NEEDS_REAUTH", "en"): 'Sign-in lost: choose "Sign in again"',
+        ("NEEDS_REAUTH", "nl"): 'Aanmelding verloren: kies "Opnieuw aanmelden"',
+        ("SIGNED_OUT", "en"): "Signed out (turn off Sign out to sign in)",
+        ("SIGNED_OUT", "nl"): "Afgemeld (zet Sign out uit om je aan te melden)",
+        ("EXPIRED_CODE", "en"): 'Code expired: choose "Sign in again"',
+        ("EXPIRED_CODE", "nl"): 'Code verlopen: kies "Opnieuw aanmelden"',
+        ("AUTHORIZED", "en"): "Signed in",
+        ("UNAUTHORIZED", "nl"): "Aanmelden wordt gestart",
     }
     for (state, lang), line in expected.items():
         assert pending_text(state, "", lang, code="") == line
@@ -816,7 +819,7 @@ def test_single_line_states_are_short():
 
 def test_user_action_without_a_pending_link_hints_re_authorize():
     svalue = pending_text("NEEDS_USER_ACTION", "", "nl", message="voorwaarden", code="")
-    assert svalue == "Actie nodig: voorwaarden<ul><li>Kies Opnieuw autoriseren</li></ul>"
+    assert svalue == 'Actie nodig: voorwaarden<ul><li>Kies "Opnieuw aanmelden"</li></ul>'
 
 
 def test_notes_become_their_own_escaped_bullet():
@@ -861,7 +864,7 @@ def step_of(option, value):
     return next(u for u in units.values() if u.options.get("HCKey") == option["key"])
 
 
-def test_setpoint_without_stepsize_steps_by_one_or_by_a_minute():
+def test_setpoint_without_stepsize_steps_by_one_and_shows_seconds_as_minutes():
     temp = step_of(
         {
             "key": "X.Y.Option.Heat",
@@ -881,7 +884,35 @@ def test_setpoint_without_stepsize_steps_by_one_or_by_a_minute():
         },
         model.Value(600, "seconds"),
     )
-    assert duration.options["ValueStep"] == "60"
+    assert duration.options["ValueStep"] == "1"
+    assert duration.options["ValueUnit"] == "min"
+    # 1 s rounds up to 0.02 min, so the card's own minimum is a value the plugin accepts.
+    assert (duration.options["ValueMin"], duration.options["ValueMax"]) == ("0.02", "90")
+    assert duration.svalue == "10.0"
+    odd = step_of(
+        {
+            "key": "BSH.Common.Option.Duration",
+            "type": "Int",
+            "unit": "seconds",
+            "constraints": {"min": 59, "max": 5399},
+        },
+        model.Value(80, "seconds"),
+    )
+    assert (odd.options["ValueMin"], odd.options["ValueMax"], odd.svalue) == (
+        "0.99",
+        "89.98",
+        "1.33",
+    )
+    stepped = step_of(
+        {
+            "key": "BSH.Common.Option.Duration",
+            "type": "Int",
+            "unit": "seconds",
+            "constraints": {"min": 60, "max": 5400, "stepsize": 30},
+        },
+        model.Value(90, "seconds"),
+    )
+    assert (stepped.options["ValueStep"], stepped.svalue) == ("0.5", "1.5")
     given = step_of(
         {
             "key": "X.Y.Option.Heat",
@@ -1338,9 +1369,482 @@ def test_status_code_writes_only_when_the_level_changes(domoticz):
     assert unit.Used == 1
 
 
-def test_status_code_unit_number_is_permanent_and_clear_of_the_control_units():
-    # Unit numbers can never change once created; 8 to 10 belong to the control units.
-    assert planner.UNIT_STATUS_CODE == 11
-    assert planner.UNIT_STATUS_CODE not in planner.RESERVED_CONTROL_UNITS
-    assert set(planner.RESERVED_CONTROL_UNITS) == {8, 9, 10}
-    assert planner.UNIT_STATUS_CODE < persistence.FIRST_DYNAMIC_UNIT
+def test_fixed_unit_numbers_are_permanent():
+    # A unit number can never change once created.
+    assert (
+        planner.UNIT_PROGRAM_SELECT,
+        planner.UNIT_ACTIONS,
+        planner.UNIT_ACK,
+        planner.UNIT_STATUS_CODE,
+        planner.UNIT_DELAYED_START,
+    ) == (8, 9, 10, 11, 12)
+    assert planner.UNIT_DELAYED_START < persistence.FIRST_DYNAMIC_UNIT
+    assert set(planner.CONTROL_ONLY_UNITS) == {9, 10, 12}
+
+
+def test_action_levels_are_a_fixed_contiguous_contract():
+    assert planner.ACTION_LEVELS == {
+        "start": 10,
+        "stop": 20,
+        "pause": 30,
+        "resume": 40,
+        "open_door": 50,
+        "partly_open_door": 60,
+    }
+    # In level order, door actions last: leaving those off other appliances renumbers nothing.
+    assert list(planner.ACTION_LEVELS.values()) == [10, 20, 30, 40, 50, 60]
+    assert list(planner.ACTION_LEVELS)[-2:] == ["open_door", "partly_open_door"]
+
+
+WASHER_A = "LaundryCare.Washer.Program.Cotton"
+WASHER_B = "LaundryCare.Washer.Program.EasyCare"
+READY = "BSH.Common.EnumType.OperationState.Ready"
+RUN = "BSH.Common.EnumType.OperationState.Run"
+
+
+def washer(state=READY):
+    app = model.Appliance(HA, name="Washer 1", brand="BOSCH", type="Washer", connected=True)
+    app.status[catalog.OPERATION_STATE] = model.Value(state)
+    app.cache.programs = [WASHER_A, WASHER_B]
+    app.names = {WASHER_A: "Katoen", WASHER_B: "Kreukherstellend"}
+    app.cache.program_details = {
+        WASHER_A: {"key": WASHER_A, "options": [{"key": catalog.FINISH_IN, "type": "Int"}]},
+        WASHER_B: {"key": WASHER_B, "options": []},
+    }
+    return app
+
+
+def controlled(app, state=None, lang="en"):
+    state = state or persistence.State()
+    updates = planner.plan_appliance(app, state, lang, NOW, False, app.name, allow_control=True)
+    return state, by_unit(updates)
+
+
+def test_program_selector_shows_the_selected_program_as_a_stable_level():
+    app = washer()
+    app.selected_program = WASHER_B
+    state, units = plan(app)
+    u = units[planner.UNIT_PROGRAM_SELECT]
+    assert (u.type_name, u.switchtype, u.nvalue, u.svalue) == ("Selector Switch", 18, 20, "20")
+    assert u.options["LevelNames"] == "-|Katoen|Kreukherstellend"
+    assert u.options["HCKeys"] == f"|{WASHER_A}|{WASHER_B}"
+    assert state.level_maps[HA]["8"] == [WASHER_A, WASHER_B]
+
+
+def test_program_selector_shows_the_running_program_and_never_reorders_levels():
+    app = washer(RUN)
+    app.selected_program, app.active_program = WASHER_B, WASHER_A
+    state = persistence.State(level_maps={HA: {"8": [WASHER_B]}})
+    _, units = plan(app, state)
+    assert units[planner.UNIT_PROGRAM_SELECT].nvalue == 20
+    assert state.level_maps[HA]["8"] == [WASHER_B, WASHER_A]
+
+
+def test_program_selector_is_level_zero_with_nothing_selected():
+    _, units = plan(washer())
+    assert units[planner.UNIT_PROGRAM_SELECT].nvalue == 0
+
+
+def test_a_blocked_program_selector_is_never_planned():
+    # Its level keys are lost (spec 4.4): a fresh map from today's program list would give a
+    # stored scene or timer level another program, so it gets no levels and no HCKeys.
+    app = washer()
+    app.selected_program = WASHER_B
+    state = persistence.State()
+    blocked = {(HA, planner.UNIT_PROGRAM_SELECT)}
+    for allow_control in (False, True):
+        updates = planner.plan_appliance(
+            app, state, "en", NOW, False, app.name, allow_control=allow_control, blocked=blocked
+        )
+        units = by_unit(updates)
+        assert planner.UNIT_PROGRAM_SELECT not in units
+        assert "8" not in state.level_maps.get(HA, {})
+    assert planner.UNIT_ACTIONS in units
+
+
+def test_a_blocked_dynamic_selector_is_never_planned():
+    # As for unit 8: its lost level keys are never rebuilt from today's values (spec 4.4).
+    state = persistence.State(unit_alloc={HA: {SPIN: 25}}, next_unit={HA: 26})
+    updates = planner.plan_appliance(
+        oven_with_details(), state, "en", NOW, False, "Oven 1", blocked={(HA, 25)}
+    )
+    assert 25 not in by_unit(updates)
+    assert "25" not in state.level_maps.get(HA, {})
+
+
+def test_control_units_exist_only_with_allow_control():
+    app = washer()
+    app.cache.commands = [catalog.ACKNOWLEDGE]
+    _, off = plan(app)
+    assert planner.UNIT_PROGRAM_SELECT in off
+    assert not set(planner.CONTROL_ONLY_UNITS) & set(off)
+    _, on = controlled(app)
+    actions = on[planner.UNIT_ACTIONS]
+    assert (actions.nvalue, actions.svalue) == (0, "0")
+    assert actions.options["LevelNames"] == "-|Start|Stop|Pause|Resume"
+    ack = on[planner.UNIT_ACK]
+    assert (ack.type_name, ack.switchtype, ack.has_value) == ("Push On", 9, False)
+    delayed = on[planner.UNIT_DELAYED_START]
+    assert (delayed.name, delayed.nvalue) == ("Washer 1 Ready at", 0)
+    names = delayed.options["LevelNames"].split("|")
+    assert names[:3] == ["-", planner.clock_text(0), planner.clock_text(planner.DELAY_STEP_MIN)]
+    assert len(names) == len(planner.delay_times()) + 1
+
+
+def test_delayed_start_shows_the_held_time_and_follows_the_offered_option():
+    app = washer()
+    level = planner.delay_level(17 * 60)
+    state = persistence.State(delayed_start={HA: 17 * 60})
+    _, units = controlled(app, state)
+    delayed = units[planner.UNIT_DELAYED_START]
+    assert delayed.nvalue == level
+    assert delayed.options["LevelNames"].split("|")[level // 10] == "17:00"
+    oven = app_with(**{catalog.OPERATION_STATE: READY})
+    oven.cache.programs = ["P.A"]
+    oven.cache.program_details["P.A"] = {"options": [{"key": catalog.START_IN, "type": "Int"}]}
+    _, units = controlled(oven, lang="nl")
+    assert units[planner.UNIT_DELAYED_START].name == "Oven 1 Start om"
+    oven.cache.program_details["P.A"] = {"options": []}
+    _, units = controlled(oven)
+    assert planner.UNIT_DELAYED_START not in units
+
+
+def test_appliance_without_programs_gets_no_program_or_action_units():
+    fridge = model.Appliance(HA, name="Fridge", type="FridgeFreezer", connected=True)
+    fridge.cache.commands = [catalog.ACKNOWLEDGE]
+    _, units = controlled(fridge)
+    assert planner.UNIT_PROGRAM_SELECT not in units and planner.UNIT_ACTIONS not in units
+    assert planner.UNIT_ACK in units
+
+
+def test_delay_levels_round_trip():
+    times = planner.delay_times()
+    assert times[0] == 0 and (24 * 60) % planner.DELAY_STEP_MIN == 0
+    for level in range(10, 10 * (len(times) + 1), 10):
+        assert planner.delay_level(planner.delay_minutes(level)) == level
+    for bad in (0, 15, 10 * (len(times) + 1)):
+        assert planner.delay_minutes(bad) is None
+    assert planner.delay_level(None) == 0 and planner.delay_level(7) == 0
+
+
+def test_overlay_replaces_the_planned_value_until_it_is_gone():
+    update = planner.DeviceUpdate(HA, 25, "x", "Set Point", 0, "180.0", has_value=False)
+    shown = planner.apply_overlay([update], {(HA, 25): (0, "200.0")})
+    assert (shown[0].svalue, shown[0].has_value) == ("200.0", True)
+    assert planner.apply_overlay([update], {}) == [update]
+
+
+def test_number_and_constraints_helpers_are_bounded_and_total():
+    assert planner.finite_number(5) == 5.0 and planner.finite_number(10**15) is None
+    assert planner.finite_number(True) is None and planner.finite_number(float("inf")) is None
+    assert planner.constraints_of(None) == {} and planner.constraints_of({"constraints": 1}) == {}
+    assert planner.constraints_of({"constraints": {"min": 1}}) == {"min": 1}
+
+
+def test_only_an_oven_gets_the_door_actions_after_the_others():
+    oven = app_with(**{catalog.OPERATION_STATE: READY})
+    oven.cache.programs = ["P.A"]
+    _, units = controlled(oven)
+    names = units[planner.UNIT_ACTIONS].options["LevelNames"].split("|")
+    assert names == ["-", "Start", "Stop", "Pause", "Resume", "Open door", "Partly open door"]
+    for name, level in planner.ACTION_LEVELS.items():
+        assert names[level // 10] == catalog.word(f"action_{name}", "en")
+    door = washer()
+    door.cache.commands = [catalog.OPEN_DOOR]
+    _, units = controlled(door)
+    assert units[planner.UNIT_ACTIONS].options["LevelNames"].endswith("|Partly open door")
+
+
+def test_out_of_range_progress_is_clamped_into_percent_range():
+    for reported, shown in ((-2666, "0"), (140, "100"), (42, "42")):
+        app = oven_with_details()
+        app.active_program = "P.A"
+        app.status[catalog.OPERATION_STATE] = model.Value("BSH.Common.EnumType.OperationState.Run")
+        app.options[catalog.PROGRESS] = model.Value(reported, "%")
+        _, units = plan(app)
+        assert units[planner.UNIT_PROGRESS].svalue == shown, reported
+
+
+def test_delayed_start_options_get_no_dynamic_unit():
+    app = oven_with_details()
+    app.options[catalog.START_IN] = model.Value(3600, "seconds")
+    app.options[catalog.FINISH_IN] = model.Value(3600, "seconds")
+    state, _ = plan(app)
+    allocated = state.unit_alloc.get(app.ha_id, {})
+    assert catalog.START_IN not in allocated and catalog.FINISH_IN not in allocated
+
+
+# -- descriptions -------------------------------------------------------------------------------
+
+CHILD_LOCK = "BSH.Common.Setting.ChildLock"
+SABBATH = "Cooking.Oven.Setting.SabbathMode"
+FORECAST = "BSH.Common.Option.EnergyForecast"
+SALT = "Dishcare.Dishwasher.Event.SaltNearlyEmpty"
+FAVOURITE = "BSH.Common.Event.Favorite.001.ExternalTrigger"
+CAVITY = "Cooking.Oven.Status.CurrentCavityTemperature"
+
+
+def every_kind():
+    """An appliance that gets every kind of unit the planner makes."""
+    app = washer(RUN)
+    app.status[catalog.DOOR_STATE] = model.Value("BSH.Common.EnumType.DoorState.Closed")
+    app.status[catalog.REMOTE_START] = model.Value(True)
+    app.status[CAVITY] = model.Value(180.0, "°C")
+    app.settings[catalog.POWER_STATE] = model.Value("BSH.Common.EnumType.PowerState.On")
+    app.settings[CHILD_LOCK] = model.Value(False)
+    app.cache.setting_constraints[CHILD_LOCK] = {"access": "readWrite"}
+    app.settings[SABBATH] = model.Value(False)
+    app.cache.setting_constraints[SABBATH] = {"access": "read"}
+    app.cache.program_details[WASHER_A]["options"] += [
+        {"key": SPIN, "type": "Int", "constraints": {"min": 400, "max": 1400}},
+        {"key": FORECAST, "type": "Int", "unit": "%", "constraints": {"access": "read"}},
+    ]
+    app.selected_program = app.active_program = WASHER_A
+    app.options[SPIN] = model.Value(1200)
+    app.options[FORECAST] = model.Value(40, "%")
+    app.options[catalog.PROGRESS] = model.Value(30, "%")
+    app.options[catalog.REMAINING] = model.Value(600, "seconds")
+    app.cache.commands = [catalog.ACKNOWLEDGE]
+    app.events[SALT] = model.EventState(model.PRESENT, "hint", "")
+    app.events[FAVOURITE] = model.EventState(model.PRESENT, "hint", "")
+    return app
+
+
+def described(lang):
+    state = persistence.State()
+    app = every_kind()
+    updates = planner.plan_appliance(app, state, lang, NOW, False, app.name, allow_control=True)
+    account = planner.plan_account(planner.AccountView("AUTHORIZED"), lang)
+    return state, by_unit(updates), by_unit(account, planner.ACCOUNT_DEVICE)
+
+
+def test_every_unit_gets_a_short_description_in_both_languages():
+    for lang in ("en", "nl"):
+        state, units, account = described(lang)
+        assert set(range(1, 13)) <= set(units)
+        for update in [*units.values(), *account.values()]:
+            assert update.description, (lang, update.name)
+            assert chr(0x2014) not in update.description
+            assert len(update.description) <= 260, (lang, update.name)
+            # One or two sentences: the edit dialog is small.
+            assert update.description.count(". ") <= 2, (lang, update.name)
+    _, en, _ = described("en")
+    _, nl, _ = described("nl")
+    for number in en:
+        assert en[number].description != nl[number].description, number
+
+
+def by_key(units):
+    return {u.options.get("HCKey"): u for u in units.values()}
+
+
+def test_writable_units_say_they_work_only_with_allow_control():
+    for lang, phrase in (("en", "Allow control is on"), ("nl", "Allow control aan staat")):
+        state, units, account = described(lang)
+        keys = by_key(units)
+        writable = [units[n] for n in (2, 8, 9, 10, 12)] + [keys[CHILD_LOCK], keys[SPIN]]
+        for update in writable:
+            assert phrase in update.description, (lang, update.name)
+        read_only = [units[n] for n in (1, 3, 4, 5, 6, 7, 11)]
+        read_only += [keys[SABBATH], keys[FORECAST], keys[CAVITY], keys[SALT], keys[FAVOURITE]]
+        for update in read_only:
+            assert phrase not in update.description, (lang, update.name)
+
+
+def test_descriptions_explain_the_cards_users_mix_up():
+    _, units, account = described("nl")
+    assert "(gekozen)" in units[planner.UNIT_PROGRAM].description
+    assert "Programmakeuze" in units[planner.UNIT_PROGRAM].description
+    assert "start" in units[planner.UNIT_PROGRAM_SELECT].description
+    assert "Acties" in units[planner.UNIT_DELAYED_START].description
+    assert '"-"' in units[planner.UNIT_DELAYED_START].description
+    assert '"-"' in units[planner.UNIT_ACTIONS].description
+    assert "melding" in units[planner.UNIT_ACK].description
+    code = units[planner.UNIT_STATUS_CODE].description
+    for state, level in planner.STATUS_CODE_LEVELS.items():
+        assert f"{level} {catalog.state_name(state, 'nl')}" in code
+    assert f"{planner.STATUS_CODE_OFFLINE} Offline" in code
+    assert "Instellingen, Apparaten" in account[planner.ACCOUNT_TEXT].description
+
+
+def test_ready_at_and_start_at_are_described_apart():
+    _, units, _ = described("en")
+    oven = app_with(**{catalog.OPERATION_STATE: READY})
+    oven.cache.programs = ["Cooking.Oven.Program.HeatingMode.HotAir"]
+    oven.cache.program_details = {
+        "Cooking.Oven.Program.HeatingMode.HotAir": {"options": [{"key": catalog.START_IN}]}
+    }
+    _, oven_units = controlled(oven)
+    ready_at = units[planner.UNIT_DELAYED_START].description
+    start_at = oven_units[planner.UNIT_DELAYED_START].description
+    assert "finish time" in ready_at and "start time" in start_at
+    assert ready_at != start_at
+
+
+# -- Dutch words --------------------------------------------------------------------------------
+
+COLOUR = "BSH.Common.Setting.AmbientLightColor"
+COLOUR_VALUE = "BSH.Common.EnumType.AmbientLightColor."
+
+
+def test_ambient_colour_levels_are_named_in_the_device_language():
+    app = app_with()
+    app.settings[COLOUR] = model.Value(COLOUR_VALUE + "Color40")
+    values = [COLOUR_VALUE + v for v in ("CustomColor", "Color30", "Color40")]
+    app.cache.setting_constraints[COLOUR] = {"access": "readWrite", "allowedvalues": values}
+    app.value_names[COLOUR_VALUE + "Color40"] = "koud wit"
+    app.value_names[COLOUR_VALUE + "CustomColor"] = "Custom color"
+    _, units = plan(app, lang="nl")
+    [colour] = [u for n, u in units.items() if n >= 20]
+    assert colour.options["LevelNames"] == "Niet beschikbaar|Eigen kleur|Kleur 30|koud wit"
+
+
+def test_read_only_enum_text_uses_catalog_value_names():
+    app = app_with(**{"X.Y.Status.Colour": COLOUR_VALUE + "Color31"})
+    _, units = plan(app, lang="nl")
+    assert dynamic(units)["Colour"].svalue == "Kleur 31"
+
+
+def test_duration_and_calls_are_shown_in_the_device_language():
+    app = app_with(**{catalog.OPERATION_STATE: READY})
+    app.cache.programs = ["P.A"]
+    app.cache.program_details = {"P.A": {"options": []}}
+    app.selected_program = "P.A"
+    app.cache.program_details["P.A"]["options"] = [
+        {"key": "BSH.Common.Option.Duration", "type": "Int", "unit": "seconds"}
+    ]
+    app.options["BSH.Common.Option.Duration"] = model.Value(600, "seconds")
+    _, units = plan(app, lang="nl")
+    [duration] = [u for n, u in units.items() if n >= 20]
+    assert (duration.options["ValueUnit"], duration.options["ValueStep"]) == ("min", "1")
+    account = by_unit(
+        planner.plan_account(planner.AccountView("AUTHORIZED"), "nl"), planner.ACCOUNT_DEVICE
+    )
+    assert account[planner.ACCOUNT_CALLS].options["Custom"] == "1;aanroepen"
+
+
+# -- clutter ------------------------------------------------------------------------------------
+
+
+def test_new_setting_devices_are_created_hidden_and_the_rest_shown():
+    _, units, _ = described("en")
+    keys = by_key(units)
+    assert (keys[CHILD_LOCK].used, keys[SABBATH].used) == (0, 0)
+    for key in (SPIN, FORECAST, CAVITY, SALT, FAVOURITE):
+        assert keys[key].used == 1, key
+    shown = [n for n in units if n < 20 and n != planner.UNIT_STATUS_CODE]
+    assert all(units[n].used == 1 for n in shown)
+
+
+def test_a_setting_device_the_user_shows_stays_shown(domoticz):
+    app = app_with()
+    app.settings[CHILD_LOCK] = model.Value(False)
+    app.cache.setting_constraints[CHILD_LOCK] = {"access": "readWrite"}
+    state = persistence.State()
+    updates = planner.plan_appliance(app, state, "en", NOW, False, app.name)
+    domoticz_api.apply_updates(domoticz.Devices, updates, state)
+    [unit] = [u for n, u in domoticz.Devices[HA].Units.items() if n >= 20]
+    assert unit.stored["Used"] == 0
+    unit.Used = 1  # the user adds it to the dashboard
+    unit.Update(Log=False, UpdateProperties=True)
+    app.settings[CHILD_LOCK] = model.Value(True)
+    updates = planner.plan_appliance(app, state, "en", NOW, False, app.name)
+    domoticz_api.apply_updates(domoticz.Devices, updates, state)
+    assert (unit.stored["Used"], unit.stored["sValue"]) == (1, "On")
+
+
+def test_cooling_setpoints_and_super_modes_stay_shown():
+    fridge = model.Appliance(
+        HA, name="Fridge 1", brand="BOSCH", type="FridgeFreezer", connected=True
+    )
+    keys = {
+        "Refrigeration.FridgeFreezer.Setting.SetpointTemperatureFreezer": model.Value(-18, "°C"),
+        "Refrigeration.FridgeFreezer.Setting.SetpointTemperatureRefrigerator": model.Value(4, "°C"),
+        "Refrigeration.FridgeFreezer.Setting.SuperModeFreezer": model.Value(False),
+        "Refrigeration.FridgeFreezer.Setting.SuperModeRefrigerator": model.Value(False),
+        CHILD_LOCK: model.Value(False),
+    }
+    for key, value in keys.items():
+        fridge.settings[key] = value
+        fridge.cache.setting_constraints[key] = {"access": "readWrite"}
+    state = persistence.State()
+    used = {
+        u.options["HCKey"]: u.used
+        for u in planner.plan_appliance(fridge, state, "en", NOW, False, fridge.name)
+        if "HCKey" in u.options
+    }
+    assert used == {key: 0 if key == CHILD_LOCK else 1 for key in keys}
+
+
+def test_descriptions_say_what_the_unit_really_does():
+    _, en, en_account = described("en")
+    _, nl, nl_account = described("nl")
+    assert en[planner.UNIT_REMOTE].description == (
+        "Whether the appliance accepts a start from Domoticz; switch remote start on at the "
+        "appliance itself."
+    )
+    assert nl[planner.UNIT_REMOTE].description == (
+        "Of het apparaat een start vanuit Domoticz accepteert; zet starten op afstand aan op het "
+        "apparaat zelf."
+    )
+    assert en[planner.UNIT_POWER].description.startswith(
+        "Switches the appliance on or off; some appliances can be switched on here but not off."
+    )
+    assert nl[planner.UNIT_POWER].description.startswith(
+        "Zet het apparaat aan of uit; sommige apparaten kun je hier wel aanzetten, maar niet "
+        "uitzetten."
+    )
+    # The washer offers FinishInRelative: a finish time.
+    assert nl[planner.UNIT_DELAYED_START].description.startswith(
+        'Kies een eindtijd en daarna Start in Acties; bij "-" start het programma meteen. '
+        "Een gekozen tijd geldt voor één keer."
+    )
+    assert en[planner.UNIT_DELAYED_START].description.startswith(
+        'Pick a finish time, then choose Start in Actions; with "-" Start begins straight away. '
+        "A chosen time applies to one run only."
+    )
+    assert nl[planner.UNIT_DOOR].description.endswith('toont dan "Vergrendeld".')
+    assert en[planner.UNIT_DOOR].description.endswith('then shows "Locked".')
+    assert nl[planner.UNIT_PROGRAM_SELECT].description.startswith(
+        "Kies een programma; kiezen start het nog niet, dat doe je met Start in Acties."
+    )
+    assert "aanmelden" in nl_account[planner.ACCOUNT_TEXT].description
+    assert "inloggen" not in nl_account[planner.ACCOUNT_TEXT].description
+    assert nl_account[planner.ACCOUNT_ACTIONS].description.startswith(
+        '"Opnieuw aanmelden" toont een nieuwe aanmeldlink en code; "Apparaten verversen" laadt'
+    )
+    assert en_account[planner.ACCOUNT_ACTIONS].description.startswith(
+        '"Sign in again" shows a new sign-in link and code;'
+    )
+    assert nl_account[planner.ACCOUNT_CALLS].description == (
+        "Aanroepen naar Home Connect in de afgelopen 24 uur; Home Connect staat er 1000 per dag "
+        "toe."
+    )
+
+
+def test_start_at_description_names_a_start_time():
+    oven = app_with(**{catalog.OPERATION_STATE: READY})
+    oven.cache.programs = ["Cooking.Oven.Program.HeatingMode.HotAir"]
+    oven.cache.program_details = {
+        "Cooking.Oven.Program.HeatingMode.HotAir": {"options": [{"key": catalog.START_IN}]}
+    }
+    _, units = controlled(oven, lang="nl")
+    assert units[planner.UNIT_DELAYED_START].description.startswith(
+        'Kies een starttijd en daarna Start in Acties; bij "-" start het programma meteen.'
+    )
+    assert "ovendeur" in units[planner.UNIT_ACTIONS].description
+
+
+def test_actions_mention_door_actions_only_where_offered():
+    for lang, door in (("en", "door"), ("nl", "deur")):
+        _, units, _ = described(lang)  # a washer: no door commands
+        assert door not in units[planner.UNIT_ACTIONS].description, lang
+
+
+def test_descriptions_contain_no_markup_characters():
+    # Domoticz HTML-escapes a description when it serves it, so "<", ">" and "&" would show up
+    # literally as entities.
+    for lang in ("en", "nl"):
+        for name in catalog._DESCRIPTIONS:
+            text = catalog.description(name, lang, True, levels="")
+            assert not set("<>&") & set(text), (lang, name)

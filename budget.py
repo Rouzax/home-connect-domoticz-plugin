@@ -14,7 +14,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 AUTH = "auth"
@@ -25,12 +25,18 @@ CLASSES = (AUTH, STREAM, BACKGROUND, COMMAND)
 
 TOTAL = 950
 CEILINGS = {AUTH: 250, STREAM: 40, BACKGROUND: 500}
+# The last requests of the total that commands may never use: they stay free for a token
+# refresh and stream reconnects, so a day of commands cannot lock the plugin out (spec 7.7).
+COMMAND_RESERVE = 70
 WINDOW_MINUTES = 24 * 60
 PACE_PER_MINUTE = 30
 BRAKE_PAUSE = 6
 BRAKE_HARD_STOP = 8
 BRAKE_WINDOW_S = 600.0
 CLOCK_JUMP_TOLERANCE_S = 120.0
+# Program starts and stops per minute, each: Home Connect allows five of each (spec 3.4).
+ACTION_LIMIT = 5
+LIMITED_ACTIONS = ("start", "stop")
 
 
 def _finite(value: Any) -> float:
@@ -73,6 +79,13 @@ class BudgetSnapshot:
     exhausted: frozenset[str]
     block_until_mono: float = 0.0  # time.monotonic() value the 429 block ends at, 0.0 if none
     brake_until_mono: float = 0.0  # time.monotonic() value the brake window ends at, 0.0 if none
+    # time.monotonic() value at which the next start or stop is allowed; an action is absent
+    # while one is allowed now.
+    action_free_at: dict[str, float] = field(default_factory=dict)
+    # time.monotonic() of the last attempt that got no HTTP answer, 0.0 once anything answered.
+    network_failed_mono: float = 0.0
+    # Wall time at which a command fits under the reserve again, 0.0 while one fits now.
+    command_free_at: float = 0.0
 
 
 class Budget:
@@ -112,6 +125,8 @@ class Budget:
         self._last_error_mono = 0.0
         self._probe_in_flight = False
         self._probe_sent_mono = 0.0
+        self._actions: dict[str, deque[float]] = {a: deque() for a in LIMITED_ACTIONS}
+        self._network_failed_mono = 0.0
         self._snapshot = self._make_snapshot()
 
     # -- internals, called with the lock held --------------------------------------------------
@@ -148,6 +163,9 @@ class Budget:
             return CEILINGS[BACKGROUND] - max(0, used[STREAM] - CEILINGS[STREAM])
         if cls == AUTH:
             return CEILINGS[AUTH]
+        if cls == COMMAND:
+            others = sum(used.values()) - used[COMMAND]
+            return TOTAL - COMMAND_RESERVE - others
         return TOTAL
 
     def _brake(self, mono: float, cls: str) -> Decision | None:
@@ -167,7 +185,7 @@ class Budget:
                 return Decision(False, "brake", max(0.0, BRAKE_WINDOW_S - waited))
         return None
 
-    def _check(self, cls: str, exempt_brake: bool = False) -> Decision:
+    def _check(self, cls: str, exempt_brake: bool = False, limit: str = "") -> Decision:
         now, mono = self._now()
         if mono < self._block_until_mono:
             return Decision(False, "blocked", self._block_until_mono - mono)
@@ -183,10 +201,31 @@ class Budget:
             self._recent.popleft()
         if len(self._recent) >= PACE_PER_MINUTE:
             return Decision(False, "pace", 60 - (mono - self._recent[0]))
+        if limit:
+            sent = self._actions[limit]
+            while sent and mono - sent[0] >= 60:
+                sent.popleft()
+            if len(sent) >= ACTION_LIMIT:
+                return Decision(False, "limiter", 60 - (mono - sent[0]))
         return Decision(
             True,
             probe=self._consecutive >= BRAKE_PAUSE and not exempt_brake and cls != AUTH,
         )
+
+    def _command_free_at(self, used: dict[str, int]) -> float:
+        """When enough of the oldest requests have left the rolling window for a command."""
+        excess = sum(used.values()) - (TOTAL - COMMAND_RESERVE) + 1
+        if excess <= 0:
+            return 0.0
+        per_minute: dict[int, int] = {}
+        for minutes in self._ledger.values():
+            for minute, count in minutes.items():
+                per_minute[minute] = per_minute.get(minute, 0) + count
+        for minute in sorted(per_minute):
+            excess -= per_minute[minute]
+            if excess <= 0:
+                return float((minute + WINDOW_MINUTES) * 60)
+        return 0.0  # pragma: no cover - the ledger holds every request counted in `used`
 
     def _make_snapshot(self) -> BudgetSnapshot:
         now, mono = self._now()
@@ -194,7 +233,13 @@ class Budget:
         exhausted = frozenset(c for c in CLASSES if used[c] >= self._ceiling(c, used))
         braked = self._consecutive >= BRAKE_PAUSE
         blocked = mono < self._block_until_mono
+        free_at: dict[str, float] = {}
+        for action, sent in self._actions.items():
+            recent = [t for t in sent if mono - t < 60]
+            if len(recent) >= ACTION_LIMIT:
+                free_at[action] = recent[-ACTION_LIMIT] + 60
         return BudgetSnapshot(
+            command_free_at=self._command_free_at(used),
             used=used,
             total_used=sum(used.values()),
             blocked_for_s=self._block_until_mono - mono if blocked else 0.0,
@@ -202,6 +247,8 @@ class Budget:
             exhausted=exhausted,
             block_until_mono=self._block_until_mono if blocked else 0.0,
             brake_until_mono=self._last_error_mono + BRAKE_WINDOW_S if braked else 0.0,
+            action_free_at=free_at,
+            network_failed_mono=self._network_failed_mono,
         )
 
     # -- public -------------------------------------------------------------------------------
@@ -216,14 +263,18 @@ class Budget:
             self._snapshot = self._make_snapshot()
             return decision
 
-    def acquire(self, cls: str, *, exempt_brake: bool = False) -> Decision:
+    def acquire(self, cls: str, *, exempt_brake: bool = False, limit: str = "") -> Decision:
+        if limit and limit not in self._actions:
+            raise ValueError("unknown action limit")
         with self._lock:
-            decision = self._check(cls, exempt_brake)
+            decision = self._check(cls, exempt_brake, limit)
             if decision.allowed:
                 now, mono = self._now()
                 minute = int(now // 60)
                 self._ledger[cls][minute] = self._ledger[cls].get(minute, 0) + 1
                 self._recent.append(mono)
+                if limit:
+                    self._actions[limit].append(mono)
                 if decision.probe:
                     self._probe_in_flight = True
                     self._probe_sent_mono = mono
@@ -231,15 +282,24 @@ class Budget:
             return decision
 
     def record(
-        self, *, error: bool, counts: bool = True, probe: bool = False, neutral: bool = False
+        self,
+        *,
+        error: bool,
+        counts: bool = True,
+        probe: bool = False,
+        neutral: bool = False,
+        network: bool = False,
     ) -> None:
         """Book an answer. Pass probe=decision.probe so only the probe releases the probe slot.
 
         neutral=True books an answer that neither feeds nor resets the error count, whatever
         `error` says: an OAuth success proves nothing about the API endpoints the count guards.
+        network=True books an attempt that got no HTTP answer at all; commands are refused for a
+        while after one (spec 7.1), and any answer clears the mark.
         """
         with self._lock:
             mono = self._mono()
+            self._network_failed_mono = mono if network else 0.0
             if probe:
                 self._probe_in_flight = False
             if neutral:

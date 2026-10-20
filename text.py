@@ -56,8 +56,8 @@ def clean_label(value: object, max_len: int = 60) -> str:
     return _SPACES.sub(" ", cleaned).strip()[:max_len].strip()
 
 
-def log_value(value: object) -> str:
-    cleaned = _strip_controls(str(value))[:200].replace("\\", "\\\\").replace('"', '\\"')
+def log_value(value: object, max_len: int = 200) -> str:
+    cleaned = _strip_controls(str(value))[:max_len].replace("\\", "\\\\").replace('"', '\\"')
     return f'"{cleaned}"'
 
 

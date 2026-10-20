@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import sse
@@ -115,3 +117,30 @@ def test_deep_nesting_within_the_event_cap_does_not_escape():
     lines = [b"event:STATUS\n", b"data:" + b"[" * 60_000 + b"\n", b"\n"]
     events = run(lines)
     assert events and sse.items(events[0]) == []
+
+
+def test_log_fields_keep_whole_values_and_drop_item_noise():
+    summary = {"energy": 812, "water": 41250}
+    data = {
+        "haId": "H",
+        "items": [
+            {"key": "A.Summary", "value": summary, "uri": "/x", "timestamp": 1},
+            {"key": "A.Door", "value": "A.Open", "displayvalue": "Open", "level": "hint"},
+            {"key": "A.Water", "value": 41250, "unit": "ml"},
+            {"key": "A.Flag", "value": True},
+            {"key": "A.Gone", "value": None},
+        ],
+    }
+    fields = sse.log_fields(sse.Event("STATUS", json.dumps(data), "H"))
+    assert fields == [
+        {"key": "A.Summary", "value": '{"energy": 812, "water": 41250}'},
+        {"key": "A.Door", "value": "A.Open", "display": "Open"},
+        {"key": "A.Water", "value": 41250, "unit": "ml"},
+        {"key": "A.Flag", "value": "true"},
+        {"key": "A.Gone", "value": "null"},
+    ]
+
+
+def test_log_fields_of_an_event_without_items_log_once():
+    assert sse.log_fields(sse.Event("KEEP-ALIVE", "", "")) == [{}]
+    assert sse.log_fields(sse.Event("CONNECTED", '{"haId":"H"}', "H")) == [{}]

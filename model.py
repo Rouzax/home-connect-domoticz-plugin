@@ -6,7 +6,7 @@ arrived after the request was issued, so a slow GET can never roll back a stream
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass, field
 
 import errors
@@ -47,7 +47,7 @@ class EventEffect:
     unknown_appliance: bool = False
 
 
-def _option_list(detail: object) -> list[dict]:
+def option_list(detail: object) -> list[dict]:
     options = detail.get("options") if isinstance(detail, dict) else None
     return [o for o in options if isinstance(o, dict)] if isinstance(options, list) else []
 
@@ -120,10 +120,22 @@ def option_detail(app: Appliance, key: str) -> dict | None:
     ordered = [p for p in (app.selected_program, app.active_program) if p is not None]
     ordered += [p for p in details if p not in ordered]
     for program in ordered:
-        for option in _option_list(details.get(program)):
+        for option in option_list(details.get(program)):
             if option.get("key") == key:
                 return option
     return None
+
+
+def cache_names(appliances: Iterable[Appliance], ha_ids: Collection[str]) -> None:
+    """Copy each appliance's Home Connect names into its persisted cache. An entry mentioning a
+    haId (a user can type anything into a name) stays out of the snapshot."""
+
+    def clean(names: dict[str, str]) -> dict[str, str]:
+        return {k: v for k, v in names.items() if not any(h in k or h in v for h in ha_ids)}
+
+    for app in appliances:
+        app.cache.names = clean(app.names)
+        app.cache.value_names = clean(app.value_names)
 
 
 def _data(payload) -> dict:
@@ -235,7 +247,7 @@ class Model:
             app.names[key] = text.clean_label(data["name"])
         # Options describe the active program while one runs, otherwise the selected one.
         if key and (kind == "active" or app.active_program is None):
-            for entry in _option_list(data):
+            for entry in option_list(data):
                 self._observe(app, app.options, entry, issued)
 
     def apply_available(self, ha_id: str, payload, state_stamp: str | None) -> None:
@@ -257,7 +269,7 @@ class Model:
         data = _data(payload)
         if app is not None and text.valid_key(key) and data:
             app.cache.program_details[key] = data
-            for option in _option_list(data):
+            for option in option_list(data):
                 if text.valid_key(option.get("key")):
                     self._remember_names(app, option)
 
@@ -378,6 +390,9 @@ class Model:
                     str(item.get("handling", "")),
                 )
                 app.seq[key] = self.tick()
+                # Events carry the only name Home Connect gives them; without it the alert
+                # device would be created under the key's English fallback.
+                self._remember_names(app, item)
             elif key in (SELECTED_ROOT, ACTIVE_ROOT):
                 value = item.get("value")
                 program = value if text.valid_key(value) else None

@@ -564,3 +564,49 @@ def test_missed_connected_then_live_status_refetches_and_rejoins_daily():
     )
     assert ("status", WASHER) in kinds(s.on_effect(m, effect))
     assert ("available", WASHER) in kinds(s.daily(m, now_wall=200_000.0))
+
+
+def test_commands_404_is_not_queued_again_by_later_status_answers():
+    m, s, clock = setup((OVEN, "Oven"))
+    set_state(m, OVEN, "Ready")
+    app = m.appliances[OVEN]
+    s.after_response(m, scheduler.Job(kind="commands", ha_id=OVEN), 404)
+    status = scheduler.Job(kind="status", ha_id=OVEN)
+    assert "commands" not in {j.kind for j in s.after_response(m, status, 200)}
+    # Not the hourly retry of a transient failure: the next ask is the daily refresh.
+    assert app.cache.refreshed_at == clock.wall
+
+
+def test_commands_404_keeps_the_hourly_retry_of_a_failed_available():
+    m, s, clock = setup((OVEN, "Oven"))
+    set_state(m, OVEN, "Ready")
+    app = m.appliances[OVEN]
+    s.after_response(m, scheduler.Job(kind="available", ha_id=OVEN), 409)
+    retry = app.cache.refreshed_at
+    assert retry < clock.wall
+    s.after_response(m, scheduler.Job(kind="commands", ha_id=OVEN), 404)
+    assert app.cache.refreshed_at == retry
+
+
+def test_reconnect_resync_sends_no_commands_for_appliances_that_offer_none():
+    ids = [f"SIEMENS-OVEN-{n}" for n in range(6)]
+    m, s, _ = setup(*[(h, "Oven") for h in ids])
+    for h in ids:
+        set_state(m, h, "Ready")
+        s.after_response(m, scheduler.Job(kind="commands", ha_id=h), 404)
+    resync = s.on_stream_reconnected(m)
+    follow = []
+    for job in [j for j in resync if j.kind == "status"]:
+        follow += s.after_response(m, job, 200)
+    assert "commands" not in {j.kind for j in resync + follow}
+
+
+def test_daily_refresh_asks_once_for_commands_after_a_404_and_a_200_clears_the_memory():
+    m, s, clock = setup((FRIDGE, "FridgeFreezer"))
+    s.after_response(m, scheduler.Job(kind="commands", ha_id=FRIDGE), 404)
+    assert s.daily(m, now_wall=clock.wall + 60) == []
+    asked = [j for j in s.daily(m, now_wall=clock.wall + 86_401) if j.kind == "commands"]
+    assert len(asked) == 1
+    s.after_response(m, scheduler.Job(kind="commands", ha_id=FRIDGE), 200)
+    status = scheduler.Job(kind="status", ha_id=FRIDGE)
+    assert "commands" in {j.kind for j in s.after_response(m, status, 200)}
