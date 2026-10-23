@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.3] - 2026-10-23
+
+### Changed
+
+- The Status code device is created as used and named with a leading "$" (for example
+  "$Washer Status code"), so dzVents and Lua scripts see it straight away while it stays off the
+  dashboard. dzVents and Lua do not reliably see a device that is not used, which is how earlier
+  versions created it. On an existing install the device gets the "$" name by itself (unless you
+  renamed it), but stays not used: add it under Setup > Devices. If you had added it to the
+  dashboard, the "$" now takes it off; rename it without the "$" to bring it back.
+
 ## [0.1.0-beta.2] - 2026-10-23
 
 ### Changed

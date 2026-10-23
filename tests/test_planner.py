@@ -1308,8 +1308,9 @@ def test_status_code_selector_maps_each_state_to_its_fixed_level():
     unit = status_code(
         app_with(**{catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.Run"})
     )
-    assert unit.name == "Oven 1 Status code"
-    assert (unit.type_name, unit.switchtype, unit.used) == ("Selector Switch", 18, 0)
+    # Used, so dzVents and Lua load it; the leading "$" keeps it off the dashboard.
+    assert unit.name == "$Oven 1 Status code"
+    assert (unit.type_name, unit.switchtype, unit.used) == ("Selector Switch", 18, 1)
     assert unit.image == catalog.IMAGE_HEATING
     names = unit.options["LevelNames"].split("|")
     assert names[1:] == [
@@ -1341,7 +1342,7 @@ def test_status_code_offline_unknown_and_dutch():
     nl = status_code(
         app_with(**{catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.Run"}), "nl"
     )
-    assert nl.name == "Oven 1 Statuscode"
+    assert nl.name == "$Oven 1 Statuscode"
     assert nl.options["LevelNames"].split("|")[4] == "Bezig"
     assert nl.options["LevelNames"].split("|")[10] == "Offline"
 
@@ -1357,7 +1358,7 @@ def test_status_code_writes_only_when_the_level_changes(domoticz):
 
     write()
     unit = domoticz.Devices[HA].Units[planner.UNIT_STATUS_CODE]
-    assert unit.stored["Used"] == 0 and unit.nValue == 40
+    assert unit.stored["Used"] == 1 and unit.nValue == 40
     count = len(unit.updates)
     write()
     assert len(unit.updates) == count

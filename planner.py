@@ -782,9 +782,10 @@ def _status_code(
 ) -> DeviceUpdate | None:
     """Unit 11, or None for an unknown or missing state, which leaves the level as it is.
 
-    Created hidden: scripts read hidden devices, and a user who wants it on the dashboard turns
-    it on (Used applies at creation only). Its levels live in code, never in HCKeys, so the
-    level map recovery never reports it (domoticz_api.recover_from_devices).
+    Created used, because dzVents and Lua load only used devices, and named with a leading "$",
+    which keeps a used device off the dashboard while scripts still read it and trigger on it.
+    Both apply at creation only, so a user's own choice survives. Its levels live in code, never
+    in HCKeys, so the level map recovery never reports it (domoticz_api.recover_from_devices).
     """
     level = STATUS_CODE_OFFLINE if not app.connected else STATUS_CODE_LEVELS.get(state or "")
     if level is None:
@@ -797,7 +798,7 @@ def _status_code(
     update = _update(
         dev, UNIT_STATUS_CODE, label, item, "selector", level, str(level), options=options
     )
-    return replace(update, used=0)
+    return replace(update, name=f"${update.name}")
 
 
 def _fixed(

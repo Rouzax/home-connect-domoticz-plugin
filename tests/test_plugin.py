@@ -632,7 +632,7 @@ def test_discovery_creates_devices_and_starts_the_stream(run, domoticz):
     answer(made, "status", body=status_body())
     assert domoticz.Devices[HA].Units[planner.UNIT_STATE].sValue == "Running"
     code = domoticz.Devices[HA].Units[planner.UNIT_STATUS_CODE]
-    assert (code.nValue, code.stored["Used"]) == (40, 0)
+    assert (code.nValue, code.stored["Used"]) == (40, 1)
     assert made["req"].take("active").ha_id == HA
 
 

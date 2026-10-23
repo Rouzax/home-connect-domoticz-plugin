@@ -76,13 +76,6 @@ times 00:00 to 04:30. A scene stored with a higher level selects the level-100 c
 Use a timer or a dzVents script for the others
 ([Control](control.md#scenes-timers-and-scripts)).
 
-### On my phone, choosing a level sets it back to "-" or to the first level
-
-With the Machinon theme on a phone, a selector can send its command twice, the second time
-with the wrong level
-([domoticz/Machinon#245](https://github.com/domoticz/Machinon/issues/245)). Use a desktop
-browser or another theme for selectors until that is fixed.
-
 ## A command is refused or fails
 
 The plugin checks every command before sending it. When it refuses one, nothing is sent and the

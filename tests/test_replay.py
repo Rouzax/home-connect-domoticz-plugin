@@ -220,7 +220,7 @@ def test_all_five_appliances_get_sensible_devices(domoticz):
         names = [unit.Name.casefold() for unit in units.values()]
         assert len(set(names)) == len(names), "unit names are unique per device"
         for unit in units.values():
-            assert unit.Name.startswith(labels[app.ha_id])
+            assert unit.Name.removeprefix("$").startswith(labels[app.ha_id])
             assert app.ha_id not in unit.Name + str(unit.sValue)
             assert "<" not in str(unit.sValue)
     for oven in replay.by_type("Oven"):

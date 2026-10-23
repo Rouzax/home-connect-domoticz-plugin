@@ -32,7 +32,7 @@ and a hob can be monitored but not started.
 | **Actions** / Acties | Selector | Start, Stop, Pause, Resume, and on an oven with a motorised door Open door and Partly open door. An action the appliance does not support is refused. Only with Allow control on. |
 | **Acknowledge** / Bevestigen | Push button | Confirms a message on the appliance. Only with Allow control on, and only where the appliance offers it. |
 | **Start at** or **Ready at** / Start om of Klaar om | Selector | A clock time for a delayed start. Only with Allow control on. See [Control](control.md#start-later). |
-| **Status code** / Statuscode | Selector | The state as a fixed number for scripts (below). Created hidden. |
+| **Status code** / Statuscode | Selector | The state as a fixed number for scripts (below). Its name starts with "$", which keeps it off the dashboard. |
 
 **Program or Program choice?** Program choice is the program that is *selected* (on the
 appliance or from Domoticz), which is what Start will run; with Allow control on you change it
@@ -57,8 +57,14 @@ a level that never changes, so a script can rely on it:
 | 90 | Error |
 | 100 | Offline |
 
-The device is created hidden; scripts can read a hidden device. To see it in the dashboard, turn
-it on under Setup > Devices.
+The device is named with a leading "$", for example "$Washer Status code". Domoticz leaves a
+device whose name starts with "$" off the dashboard, while dzVents and Lua scripts read it and
+trigger on it as usual. To see it on the dashboard, rename it without the "$".
+
+Installed 0.1.0-beta.2 or earlier? There the device was created as not used, and dzVents and Lua
+do not reliably see a device that is not used. Under Setup > Devices, filter on the hardware and
+add the Status code device with the green arrow. The plugin gives it the "$" name by itself,
+unless you renamed it.
 
 ## Options, settings and other values
 
@@ -80,7 +86,10 @@ Values the plugin has no name for (Home Connect adds new ones over time) get the
 Connect sends, and their devices are created hidden.
 
 **Where are the hidden devices?** Under **Setup > Devices**. Filter on the hardware, and use the
-green arrow on a device to add it to the dashboard.
+green arrow on a device to add it to the dashboard. Scripts (dzVents, Lua) only reliably see a
+device once it is added: a hidden device is not used, and Domoticz does not load it for scripts.
+To give a script a device without putting it on the dashboard, add it and rename it with a
+leading "$".
 
 ## Washing machine meters
 
