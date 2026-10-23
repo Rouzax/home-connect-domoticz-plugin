@@ -1,6 +1,8 @@
 name: Deploy docs
 
-# Builds the docs with Zensical and publishes them to the gh-pages branch (GitHub Pages).
+# Builds the docs with Zensical and publishes them to GitHub Pages straight from the workflow
+# (Pages source: GitHub Actions), so there is no gh-pages branch and no job writes to the
+# repository's contents.
 on:
   push:
     branches: [main]
@@ -14,11 +16,14 @@ on:
 permissions:
   contents: read
 
+# One deployment at a time; a newer push supersedes a queued one, never one already deploying.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # the publish step pushes the built site to gh-pages
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -29,12 +34,24 @@ jobs:
       - name: Build
         run: zensical build --clean --strict
 
-      # Replaces `mkdocs gh-deploy --force --no-history`, which Zensical does
-      # not implement. force_orphan keeps gh-pages at a single commit, as
-      # --no-history did.
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+      - name: Upload site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          force_orphan: true
+          path: ./site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish the uploaded site
+      id-token: write # prove the deployment comes from this workflow
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
