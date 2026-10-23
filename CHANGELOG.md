@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.2] - 2026-10-23
+
+### Changed
+
+- The plugin key and its folder are now `homeconnectex` instead of `homeconnect`, so the plugin
+  is not mistaken for the separate "Bosch Home Connect" plugin. An installation of 0.1.0-beta.1
+  is not carried over: delete its hardware and its `homeconnect` folder, install into
+  `homeconnectex` and sign in again.
+
 ## [0.1.0-beta.1] - 2026-10-23
 
 First public beta.

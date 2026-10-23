@@ -65,7 +65,7 @@ Every commit must pass all of these; CI runs the same line:
 ## Testing in Domoticz
 
 A green test suite is not proof that a Domoticz-facing change works. Before a release, run the
-plugin on a test Domoticz instance: mount or copy the checkout into its `plugins/homeconnect`
+plugin on a test Domoticz instance: mount or copy the checkout into its `plugins/homeconnectex`
 folder, add the hardware with your own Client ID, sign in, and watch the devices and the log
 with Debug level set to Basic or Verbose.
 

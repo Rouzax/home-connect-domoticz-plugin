@@ -12,7 +12,7 @@ def manifest():
 
 def test_plugin_identity():
     root = manifest()
-    assert root.get("key") == "homeconnect"
+    assert root.get("key") == "homeconnectex"
     assert root.get("author") == "Rouzax"
 
 

@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9A-Za-z.+-]+$ ]] || { echo "unexpected tag: $TAG" >&2; exit 1; }
-          PKG="homeconnect"
+          PKG="homeconnectex"
           mkdir -p "$PKG"
           # Ships every root-level *.py so new runtime modules are picked up
           # automatically. INVARIANT: repo-root *.py must stay runtime-only
@@ -41,7 +41,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" "homeconnect-${TAG}.zip" --clobber
+        run: gh release upload "$TAG" "homeconnectex-${TAG}.zip" --clobber
 
   sync-dist:
     # Maintain a runtime-only `dist` branch (all root-level Python modules + README + LICENSE + NOTICE)

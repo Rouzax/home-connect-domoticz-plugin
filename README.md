@@ -38,7 +38,7 @@ Clone the lean **`dist`** branch into your Domoticz plugins directory, then rest
 
 ```bash
 cd /opt/domoticz/plugins            # adjust to your install path
-git clone -b dist https://github.com/Rouzax/home-connect-domoticz-plugin homeconnect
+git clone -b dist https://github.com/Rouzax/home-connect-domoticz-plugin homeconnectex
 ```
 
 Then: **Setup > Hardware > Add > Home Connect**, enter your Client ID and press **Add**. Open

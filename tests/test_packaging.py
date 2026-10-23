@@ -32,7 +32,7 @@ def test_release_ships_the_notice_and_licence():
     add_lines = [x for x in lines if x.strip().startswith(add_prefix)]
     assert len(cp_lines) == 2
     assert len(add_lines) == 1
-    assert 'PKG="homeconnect"' in release
+    assert 'PKG="homeconnectex"' in release
 
 
 def test_workflow_actions_are_pinned_to_full_shas():

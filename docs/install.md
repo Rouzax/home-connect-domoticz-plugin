@@ -46,7 +46,7 @@ Domoticz needs.
 
 ```bash
 cd /opt/domoticz/plugins     # your Domoticz plugins folder
-git clone -b dist https://github.com/Rouzax/home-connect-domoticz-plugin homeconnect
+git clone -b dist https://github.com/Rouzax/home-connect-domoticz-plugin homeconnectex
 ```
 
 The plugins folder depends on how Domoticz is installed: `domoticz/plugins` next to the
@@ -54,7 +54,7 @@ Domoticz program, or `/opt/domoticz/userdata/plugins` in the official Docker ima
 
 Without git, download the zip attached to the newest release on the
 [releases page](https://github.com/Rouzax/home-connect-domoticz-plugin/releases) instead and
-unpack it in the plugins folder: it contains the same files in a `homeconnect` folder. To update,
+unpack it in the plugins folder: it contains the same files in a `homeconnectex` folder. To update,
 replace that folder with the one from a newer zip.
 
 Restart Domoticz so it finds the new plugin.
@@ -99,7 +99,7 @@ the hardware settings does the same).
 ## Updating
 
 ```bash
-cd /opt/domoticz/plugins/homeconnect
+cd /opt/domoticz/plugins/homeconnectex
 git pull
 ```
 
@@ -110,4 +110,4 @@ Restart Domoticz afterwards. Your devices, their history and your sign-in are ke
 1. Turn on **Sign out** in the hardware settings and press **Update**. The plugin withdraws its
    access at Home Connect, so no unused sign-in stays on your account.
 2. Delete the hardware in Setup > Hardware. Domoticz removes its devices.
-3. Delete the `homeconnect` folder from the plugins folder.
+3. Delete the `homeconnectex` folder from the plugins folder.
