@@ -463,3 +463,26 @@ def test_description_is_set_at_creation_only(domoticz):
         domoticz.Devices, [up(20, "y", description="Other text", name="Renamed")], state
     )
     assert unit.stored["Description"] == "My own note"
+
+
+def test_counter_meter_is_created_with_its_numeric_type(domoticz):
+    update = up(
+        40,
+        "911",
+        type_name="",
+        switchtype=3,
+        options={"ValueQuantity": "Water", "ValueUnits": "L"},
+        type_code=(113, 0),
+    )
+    domoticz_api.apply_updates(domoticz.Devices, [update], persistence.State())
+    unit = domoticz.Devices["D1"].Units[40]
+    assert (unit.Type, unit.SubType, unit.SwitchType, unit.stored["sValue"]) == (113, 0, 3, "911")
+    assert unit.TypeName == ""
+
+
+def test_empty_meter_value_is_never_written(domoticz):
+    state = persistence.State()
+    counter = up(40, "", type_name="", switchtype=3, type_code=(113, 0))
+    energy = up(41, "", type_name="kWh")
+    domoticz_api.apply_updates(domoticz.Devices, [counter, energy], state)
+    assert [domoticz.Devices["D1"].Units[n].updates for n in (40, 41)] == [[], []]

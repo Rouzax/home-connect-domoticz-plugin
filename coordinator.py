@@ -8,7 +8,7 @@ whose answer never came is reconciled with one GET and reported, never resent.
 
 import itertools
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import control
 import model
@@ -52,6 +52,9 @@ class Note:
     # appliance from now on. A move that fails, is refused or stays unconfirmed sets nothing, so
     # the old time stays held and shown (spec 6.3).
     hold: int | None = None
+    # Off for what abandon() reports at a stop or a lost sign-in: no command of the moment, so
+    # nothing for every open browser.
+    screen: bool = True
 
 
 @dataclass
@@ -158,7 +161,8 @@ class Coordinator:
         """A Start carries observed values (spec 7.6), so it waits until every earlier write of
         its appliance is settled; one accepted but not yet seen is checked at once instead of at
         its deadline. One that failed, expired or ended unknown within the last minute refuses
-        the Start."""
+        the Start, unless a later write to the same option, setting or selection was confirmed:
+        the user gave it again and it took."""
         earlier = queue[: queue.index(start)]
         waiting = [w for w in earlier if _open(w)]
         if waiting:
@@ -166,10 +170,14 @@ class Coordinator:
                 if w.state == ACCEPTED and not w.verifying:
                     w.verify_wanted = True
             return False
-        for w in earlier:
+        for i, w in enumerate(earlier):
             if w.intent.action not in _PREREQUISITES:
                 continue
-            if w.state in _BAD and now - w.finished <= PREREQUISITE_WINDOW_S:
+            retaken = bool(w.intent.coalesce) and any(
+                later.state == OBSERVED and later.intent.coalesce == w.intent.coalesce
+                for later in earlier[i + 1 :]
+            )
+            if w.state in _BAD and now - w.finished <= PREREQUISITE_WINDOW_S and not retaken:
                 reason = self._text("prerequisite", what=w.intent.describe)
                 notes.append(self._finish(start, FAILED, now, reason))
                 return False
@@ -369,7 +377,7 @@ class Coordinator:
                 elif _open(w):
                     unconfirmed = self._text("unconfirmed", a=self._label(ha))
                     notes.append(self._finish(w, UNKNOWN, now, unconfirmed))
-        return notes
+        return [replace(n, screen=False) for n in notes]
 
     # -- internals ----------------------------------------------------------------------------
 

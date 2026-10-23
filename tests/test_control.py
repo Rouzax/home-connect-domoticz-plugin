@@ -254,7 +254,9 @@ def test_delay_option_prefers_finish_over_start_and_ignores_other_keys():
 
 def test_unknown_failures_and_refusals_fall_back_to_the_key():
     assert "SDK.Odd" in control.failure_reason(errors.SERVER, "SDK.Odd", "", "Oven", "en")
-    assert control.failure_reason(errors.UNKNOWN, "", "", "Oven", "en").endswith("(unknown)")
+    assert control.failure_reason(errors.UNKNOWN, "", "", "Oven", "en").startswith(
+        "Home Connect refused it (unknown)"
+    )
     assert control.refused_reason("brake", "nl") == control.message("brake_now", "nl")
 
 
@@ -344,7 +346,7 @@ def test_a_state_refusal_the_model_cannot_explain_keeps_home_connects_key():
         ("limiter", 40.0, "Start or stop limit reached (5 per minute); try again in 40 s"),
         ("brake", 290.0, "Paused after repeated errors; try again in 5 min"),
         ("blocked", 30.0, "Home Connect asked to wait; try again in 30 s"),
-        ("pace", 0.0, "Too many requests this minute"),
+        ("pace", 0.0, "Too many requests this minute; try again in a minute"),
         ("total", 99.0, "Daily API budget used up; try again later"),
     ],
 )
@@ -364,3 +366,32 @@ def test_a_start_refused_while_a_program_waits_says_to_stop_it():
     refusal = control.build_start(app, None, 0.0, "en", "Oven")
     assert isinstance(refusal, control.Refusal)
     assert refusal.reason.endswith("; stop the program waiting for its delayed start first")
+
+
+def test_screen_messages_name_the_appliance_the_command_and_the_next_step():
+    refused = control.screen_message(
+        "command_refused", "Dishwasher Actions", "Dishwasher", "", "The door is not closed", "en"
+    )
+    assert refused == ("Dishwasher Actions: not sent", "The door is not closed")
+    failed = control.screen_message("command_failed", "", "Oven", "Start", "Oven is off", "nl")
+    assert failed == ("Oven: Start mislukt", "Oven is off")
+    assert control.screen_message("command_expired", "", "Oven", "Stop", "x", "en")[0] == (
+        "Oven: Stop not sent"
+    )
+    assert control.screen_message("command_unconfirmed", "", "Oven", "Stop", "x", "en")[0] == (
+        "Oven: Stop not confirmed"
+    )
+    assert control.screen_message("command_confirmed", "", "Oven", "Start", "", "en") == (
+        "Oven: Start done",
+        "Confirmed by Oven",
+    )
+    assert control.screen_message("command_cancelled", "", "Oven", "Start", "x", "en") is None
+
+
+def test_only_problems_reach_the_screen_unless_all_is_chosen():
+    assert control.shows_on_screen("command_refused", "problems")
+    assert control.shows_on_screen("command_failed", "all")
+    assert not control.shows_on_screen("command_confirmed", "problems")
+    assert control.shows_on_screen("command_confirmed", "all")
+    assert not control.shows_on_screen("command_failed", "off")
+    assert not control.shows_on_screen("command_queued", "all")

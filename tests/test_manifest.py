@@ -18,7 +18,15 @@ def test_plugin_identity():
 
 def test_settings_and_defaults():
     params = {p.get("field"): p for p in manifest().iter("param")}
-    expected = {"Username", "Password", "AllowControl", "DeviceLanguage", "SignOut", "DebugLevel"}
+    expected = {
+        "Username",
+        "Password",
+        "AllowControl",
+        "DeviceLanguage",
+        "ScreenMessages",
+        "SignOut",
+        "DebugLevel",
+    }
     assert set(params) == expected
     assert params["Password"].get("password") == "true"
     assert params["AllowControl"].get("default") == "false"
@@ -26,6 +34,8 @@ def test_settings_and_defaults():
     options = params["DeviceLanguage"].iter("option")
     defaults = {o.get("value") for o in options if o.get("default") == "true"}
     assert defaults == {"auto"}
+    screen = params["ScreenMessages"].iter("option")
+    assert {o.get("value") for o in screen if o.get("default") == "true"} == {"problems"}
 
 
 def test_manifest_warns_about_cleartext_storage():
@@ -59,3 +69,11 @@ def test_sign_in_help_points_to_the_account_device_and_where_to_find_it():
     assert '"Home Connect" device' in description
     assert "hidden" in description
     assert "Setup &gt; Devices" in description or "Setup > Devices" in description
+
+
+def test_manifest_version_matches_the_changelog():
+    changelog = (Path(__file__).resolve().parent.parent / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
+    top = next(line for line in changelog.splitlines() if line.startswith("## ["))
+    assert top.split("]")[0].removeprefix("## [") == manifest().get("version")

@@ -235,6 +235,12 @@ _DESCRIPTIONS = {
         "Een instelling van het apparaat, zoals het apparaat die meldt.",
     ),
     "reading": ("A value reported by the appliance.", "Een waarde die het apparaat meldt."),
+    "total": (
+        "Lifetime total reported by the appliance at the end of each program. Domoticz shows the "
+        "use per day, month and year in its log.",
+        "Totaal sinds ingebruikname, door het apparaat gemeld aan het eind van elk programma. "
+        "Domoticz toont het gebruik per dag, maand en jaar in het logboek.",
+    ),
     "event": (
         'A message from the appliance; it reads "{no_notification}" when there is none.',
         'Een melding van het apparaat; er staat "{no_notification}" als er geen is.',
@@ -325,11 +331,43 @@ _SPECIAL = {
     ),
 }
 
+
+@dataclass(frozen=True)
+class MeterInfo:
+    """A lifetime total shown as a Domoticz meter: `quantity` (en, nl) labels the graph,
+    `units` is the unit written, `reported` the unit Home Connect reports the total in, and
+    `divisor` turns that into `units`."""
+
+    kind: str
+    quantity: tuple[str, str]
+    units: str
+    reported: str
+    divisor: int
+
+
+# Totals only grow and arrive at program ends; Domoticz derives day and month usage from the
+# difference of successive totals, so the absolute value is written (spec 6.2).
+_METERS = {
+    "BSH.Common.Status.Program.All.Energy.Consumed": MeterInfo(
+        "energy_total", ("Energy", "Energie"), "Wh", "Wh", 1
+    ),
+    # Litres: a water-type meter needs a per-device divider a plugin cannot set.
+    "BSH.Common.Status.Program.All.Water.Consumed": MeterInfo(
+        "counter_total", ("Water", "Water"), "L", "ml", 1000
+    ),
+    "LaundryCare.Washer.Status.Detergent.All.Consumed": MeterInfo(
+        "counter_total", ("Detergent", "Wasmiddel"), "ml", "ml", 1
+    ),
+    "LaundryCare.Washer.Status.Softener.All.Consumed": MeterInfo(
+        "counter_total", ("Softener", "Wasverzachter"), "ml", "ml", 1
+    ),
+}
+
 # EN/NL names for documented keys. They win over the names Home Connect sends, which are often
 # long or awkward ("Basic dosing volume: detergent"); Home Connect's name is used only for a key
-# not listed here. A key listed here (or in _SPECIAL or FIXED_KEYS) is "known": its device is
-# shown on creation unless it is an appliance setting, while a device for any other key is
-# created hidden (spec 6.4).
+# not listed here. A key listed here (or in _SPECIAL, _METERS or FIXED_KEYS) is "known": its
+# device is shown on creation unless it is an appliance setting, while a device for any other
+# key is created hidden (spec 6.4).
 _NAMES = {
     # Named as the delayed-start unit is ("start_at_name", "ready_at_name"), so a log line names
     # what the card shows.
@@ -484,24 +522,24 @@ _NUMBERED_VALUES = {
 _UNITS = {"calls": ("calls", "aanroepen")}
 
 
-def _pick(pair: tuple[str, str], lang: str) -> str:
+def pick(pair: tuple[str, str], lang: str) -> str:
     return pair[1] if lang == "nl" else pair[0]
 
 
 def word(name: str, lang: str) -> str:
-    return _pick(_WORDS[name], lang)
+    return pick(_WORDS[name], lang)
 
 
 def description(name: str, lang: str, control: bool = False, **values: str) -> str:
     """A device description; `control` adds that the device works only while Allow control is on
     (a user decision: said in words, the device type stays the same)."""
-    words = {key: _pick(pair, lang) for key, pair in _WORDS.items()}
-    text = _pick(_DESCRIPTIONS[name], lang).format(**words, **values)
-    return f"{text} {_pick(_DESCRIPTIONS['control_off'], lang)}" if control else text
+    words = {key: pick(pair, lang) for key, pair in _WORDS.items()}
+    text = pick(_DESCRIPTIONS[name], lang).format(**words, **values)
+    return f"{text} {pick(_DESCRIPTIONS['control_off'], lang)}" if control else text
 
 
 def note(name: str, lang: str, **values: str) -> str:
-    return _pick(_NOTES[name], lang).format(**values)
+    return pick(_NOTES[name], lang).format(**values)
 
 
 def sign_in_state(state: str) -> str:
@@ -509,7 +547,7 @@ def sign_in_state(state: str) -> str:
 
 
 def state_name(state: str, lang: str) -> str:
-    return _pick(_STATES[state], lang) if state in _STATES else humanize(state)
+    return pick(_STATES[state], lang) if state in _STATES else humanize(state)
 
 
 def humanize(key: str) -> str:
@@ -520,6 +558,10 @@ def humanize(key: str) -> str:
 
 def special(key: str) -> KeyInfo | None:
     return _SPECIAL.get(key)
+
+
+def meter(key: str) -> MeterInfo | None:
+    return _METERS.get(key)
 
 
 def image_for(kind: str, appliance_type: str) -> int:
@@ -552,6 +594,7 @@ def known(key: str) -> bool:
     return (
         key in FIXED_KEYS
         or key in _SPECIAL
+        or key in _METERS
         or key in _NAMES
         or is_favourite(key)
         or is_compartment_door(key)
@@ -562,25 +605,25 @@ def catalog_name(key: str, lang: str) -> str | None:
     """The catalog's own name for `key`, or None when the catalog does not name it."""
     info = _SPECIAL.get(key)
     if info:
-        return _pick(info.names, lang)
-    return _pick(_NAMES[key], lang) if key in _NAMES else None
+        return pick(info.names, lang)
+    return pick(_NAMES[key], lang) if key in _NAMES else None
 
 
 def value_name(names: dict[str, str], value: str, lang: str) -> str | None:
     """The name of an enum value: the catalog's own, else Home Connect's (`names`), else a
     numbered fallback; None when nothing names it."""
     if value in _VALUE_NAMES:
-        return _pick(_VALUE_NAMES[value], lang)
+        return pick(_VALUE_NAMES[value], lang)
     if names.get(value):
         return names[value]
     match = re.fullmatch(r"(.*?)(\d+)", value)
     if match and match.group(1) in _NUMBERED_VALUES:
-        return _pick(_NUMBERED_VALUES[match.group(1)], lang).format(n=int(match.group(2)))
+        return pick(_NUMBERED_VALUES[match.group(1)], lang).format(n=int(match.group(2)))
     return None
 
 
 def unit_text(unit: str, lang: str) -> str:
-    return _pick(_UNITS[unit], lang) if unit in _UNITS else unit
+    return pick(_UNITS[unit], lang) if unit in _UNITS else unit
 
 
 def name_for(app_names: dict[str, str], key: str, lang: str) -> str:

@@ -105,3 +105,10 @@ def test_parse_json_is_safe_on_untrusted_bodies():
     assert errors.parse_json(b"") is None
     assert errors.parse_json(b"[" * 200_000) is None
     assert errors.parse_json(b'{"a": [1, 2]}') == {"a": [1, 2]}
+
+
+def test_an_appliance_refusal_without_a_reason_suggests_trying_again():
+    raw = json.dumps({"error": {"key": "BSH.Common.Error.400.BadRequest", "description": "d"}})
+    assert errors.parse_api_error(409, raw.encode()).category == errors.REFUSED_USER
+    text = errors.user_message("BSH.Common.Error.400.BadRequest", "Oven", "en") or ""
+    assert "try again in a few seconds" in text

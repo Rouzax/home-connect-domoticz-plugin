@@ -83,7 +83,11 @@ _DEFAULT_STEP = "1"
 # A time Home Connect counts in seconds (a cooking Duration) shows in minutes, as the Home Connect
 # app does; a typed 0.5 still gives 30 s. control converts a commanded value back (spec 6.3).
 SECONDS_PER_MINUTE = 60
-_NUMERIC_KINDS = frozenset({"setpoint", "temperature", "percentage", "custom", "minutes"})
+# Lifetime totals shown as Domoticz meters (catalog.meter).
+_METER_KINDS = frozenset({"energy_total", "counter_total"})
+_NUMERIC_KINDS = (
+    frozenset({"setpoint", "temperature", "percentage", "custom", "minutes"}) | _METER_KINDS
+)
 # No real reading comes near this; a larger number (still finite after json.loads) would overflow
 # time.localtime() in a finish time or fill a device with hundreds of digits.
 _NUMBER_LIMIT = 1e12
@@ -134,7 +138,12 @@ _KIND_TYPES = {
     "temperature": ("Temperature", 0),
     "custom": ("Custom", 0),
     "push": ("Push On", 9),
+    "energy_total": ("kWh", 0),
+    "counter_total": ("", 3),
 }
+# Numeric Type and Subtype for kinds whose device type has no TypeName in the Python plugin
+# layer: an RFXMeter counter.
+_KIND_CODES = {"counter_total": (113, 0)}
 
 
 @dataclass(frozen=True)
@@ -167,6 +176,8 @@ class DeviceUpdate:
     image: int = 0  # built-in icon id, applied at creation only; 0 is the Domoticz default
     create: bool = True
     description: str = ""  # applied at creation only, so a user's own text survives
+    # Numeric (Type, Subtype), used at creation instead of type_name when set.
+    type_code: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -263,7 +274,15 @@ def _update(
 ) -> DeviceUpdate:
     type_name, switchtype = _KIND_TYPES[kind]
     return DeviceUpdate(
-        dev, unit, _name(label, item), type_name, nvalue, svalue, switchtype=switchtype, **kw
+        dev,
+        unit,
+        _name(label, item),
+        type_name,
+        nvalue,
+        svalue,
+        switchtype=switchtype,
+        type_code=_KIND_CODES.get(kind),
+        **kw,
     )
 
 
@@ -360,6 +379,9 @@ def _shape(value: model.Value | None, detail: dict) -> str:
 
 
 def _readonly_kind(key: str, value: model.Value | None, detail: dict) -> str:
+    meter = catalog.meter(key)
+    if meter:
+        return meter.kind
     info = catalog.special(key)
     if info:
         return info.kind
@@ -485,6 +507,30 @@ def _number_options(kind: str, unit_label: str, lang: str) -> dict[str, str]:
     return {"Custom": f"1;{unit_label}"} if kind == "custom" and unit_label else {}
 
 
+def _meter_update(
+    dev: str,
+    unit: int,
+    label: str,
+    item: str,
+    kind: str,
+    meter: catalog.MeterInfo,
+    number: float | None,
+    lang: str,
+) -> DeviceUpdate:
+    if kind == "energy_total":
+        options = {}
+    else:
+        options = {"ValueQuantity": catalog.pick(meter.quantity, lang), "ValueUnits": meter.units}
+    if number is None:
+        # Never created or written without a real total: Domoticz would log 0 and count the
+        # whole lifetime as the first day's use.
+        update = _update(dev, unit, label, item, kind, 0, "", options=options)
+        return replace(update, create=False, has_value=False)
+    whole = round(number / meter.divisor)
+    svalue = f"0;{whole}" if kind == "energy_total" else str(whole)
+    return _update(dev, unit, label, item, kind, 0, svalue, options=options)
+
+
 def _value_update(
     state: persistence.State,
     app: model.Appliance,
@@ -502,6 +548,13 @@ def _value_update(
     info = catalog.special(key)
     number = finite_number(value.value) if value is not None else None
     unit_label = key_unit(value, detail)
+    meter = catalog.meter(key)
+    if meter is not None and unit_label and unit_label != meter.reported:
+        # A wrong unit would write a total 1000x off into a meter whose history cannot be corrected.
+        number = None
+    # A unit created with another kind (an older "custom" device) keeps it, and its branch below.
+    if kind in _METER_KINDS and meter is not None:
+        return _meter_update(dev, unit, label, item, kind, meter, number, lang)
     # Nothing usable reported: create the unit but write no value (see DeviceUpdate). A selector
     # is exempt, its level 0 "Not available" is a real state.
     unusable = value is None or (kind in _NUMERIC_KINDS and number is None)
@@ -825,7 +878,8 @@ def _program_selector(
 
 
 def _door_actions(app: model.Appliance) -> bool:
-    return app.type == "Oven" or bool(_DOOR_COMMANDS & set(app.cache.commands))
+    # Only an oven with a motorised door lists them; other ovens answer UnsupportedCommand.
+    return bool(_DOOR_COMMANDS & set(app.cache.commands))
 
 
 def _actions(app: model.Appliance, dev: str, label: str, lang: str) -> DeviceUpdate:
@@ -1004,6 +1058,8 @@ def _status_code_levels(lang: str) -> str:
 def _dynamic_description(key: str, kind: str) -> tuple[str, bool]:
     """(description name, sends commands) for a unit allocated per key. The kind, permanent once
     created, tells a writable device from a read-only one."""
+    if kind in _METER_KINDS:
+        return "total", False
     writable = kind in _WRITABLE_KINDS
     if catalog.is_favourite(key):
         return "favourite", False

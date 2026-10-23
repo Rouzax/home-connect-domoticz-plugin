@@ -1541,9 +1541,12 @@ def test_number_and_constraints_helpers_are_bounded_and_total():
     assert planner.constraints_of({"constraints": {"min": 1}}) == {"min": 1}
 
 
-def test_only_an_oven_gets_the_door_actions_after_the_others():
+def test_only_an_appliance_listing_door_commands_gets_the_door_actions_after_the_others():
     oven = app_with(**{catalog.OPERATION_STATE: READY})
     oven.cache.programs = ["P.A"]
+    _, units = controlled(oven)
+    assert units[planner.UNIT_ACTIONS].options["LevelNames"] == "-|Start|Stop|Pause|Resume"
+    oven.cache.commands = [catalog.PARTLY_OPEN_DOOR]
     _, units = controlled(oven)
     names = units[planner.UNIT_ACTIONS].options["LevelNames"].split("|")
     assert names == ["-", "Start", "Stop", "Pause", "Resume", "Open door", "Partly open door"]
@@ -1828,6 +1831,7 @@ def test_start_at_description_names_a_start_time():
     oven.cache.program_details = {
         "Cooking.Oven.Program.HeatingMode.HotAir": {"options": [{"key": catalog.START_IN}]}
     }
+    oven.cache.commands = [catalog.OPEN_DOOR]
     _, units = controlled(oven, lang="nl")
     assert units[planner.UNIT_DELAYED_START].description.startswith(
         'Kies een starttijd en daarna Start in Acties; bij "-" start het programma meteen.'
@@ -1848,3 +1852,101 @@ def test_descriptions_contain_no_markup_characters():
         for name in catalog._DESCRIPTIONS:
             text = catalog.description(name, lang, True, levels="")
             assert not set("<>&") & set(text), (lang, name)
+
+
+WASHER_HA = "SIEMENS-HCS03WCH1-000000000003"
+ENERGY_TOTAL = "BSH.Common.Status.Program.All.Energy.Consumed"
+WATER_TOTAL = "BSH.Common.Status.Program.All.Water.Consumed"
+DETERGENT_TOTAL = "LaundryCare.Washer.Status.Detergent.All.Consumed"
+
+
+def washer_with(**status):
+    app = model.Appliance(WASHER_HA, name="Washer", type="Washer", connected=True)
+    app.status.update(status)
+    return app
+
+
+def plan_washer(app, state=None, lang="en"):
+    state = state or persistence.State()
+    return by_unit(planner.plan_appliance(app, state, lang, NOW, False, app.name), WASHER_HA)
+
+
+def units_for(units, key):
+    return [u for u in units.values() if u.options.get("HCKey") == key]
+
+
+def unit_for(units, key):
+    (unit,) = units_for(units, key)
+    return unit
+
+
+def test_lifetime_totals_become_meters():
+    app = washer_with(
+        **{
+            ENERGY_TOTAL: model.Value(6293, "Wh"),
+            WATER_TOTAL: model.Value(911000, "ml"),
+            DETERGENT_TOTAL: model.Value(533, "ml"),
+        }
+    )
+    units = plan_washer(app)
+    energy, water, detergent = (
+        unit_for(units, k) for k in (ENERGY_TOTAL, WATER_TOTAL, DETERGENT_TOTAL)
+    )
+    assert (energy.type_name, energy.type_code, energy.switchtype, energy.svalue) == (
+        "kWh",
+        None,
+        0,
+        "0;6293",
+    )
+    assert "EnergyMeterMode" not in energy.options
+    assert (energy.options["HCKey"], energy.options["HCKind"]) == (ENERGY_TOTAL, "energy_total")
+    assert (water.type_code, water.switchtype, water.svalue) == ((113, 0), 3, "911")
+    assert (water.options["ValueQuantity"], water.options["ValueUnits"]) == ("Water", "L")
+    assert (water.options["HCKey"], water.options["HCKind"]) == (WATER_TOTAL, "counter_total")
+    assert (detergent.svalue, detergent.options["ValueUnits"]) == ("533", "ml")
+    assert water.description == catalog.description("total", "en")
+    nl = unit_for(plan_washer(app, lang="nl"), DETERGENT_TOTAL)
+    assert nl.options["ValueQuantity"] == "Wasmiddel"
+
+
+def test_meter_is_created_only_with_a_reported_total():
+    # Created empty, Domoticz would log 0 and count the whole lifetime as the first day's use.
+    units = plan_washer(washer_with(**{ENERGY_TOTAL: model.Value(None, "Wh")}))
+    meters = units_for(units, ENERGY_TOTAL)
+    assert len(meters) == 1
+    assert (meters[0].create, meters[0].has_value) == (False, False)
+
+
+def test_meter_total_in_an_unexpected_unit_is_not_written():
+    # A kWh total divided as if it were Wh would be 1000x off, and a meter's history is permanent.
+    units = plan_washer(washer_with(**{ENERGY_TOTAL: model.Value(6.3, "kWh")}))
+    meters = units_for(units, ENERGY_TOTAL)
+    assert len(meters) == 1
+    assert (meters[0].create, meters[0].has_value) == (False, False)
+
+
+def test_meter_total_without_a_unit_is_still_written():
+    units = plan_washer(washer_with(**{ENERGY_TOTAL: model.Value(6293, "")}))
+    assert unit_for(units, ENERGY_TOTAL).svalue == "0;6293"
+
+
+def test_meter_values_are_whole_numbers_and_non_numbers_write_nothing():
+    app = washer_with(
+        **{ENERGY_TOTAL: model.Value(5974.0, "Wh"), WATER_TOTAL: model.Value(849400, "ml")}
+    )
+    units = plan_washer(app)
+    assert unit_for(units, ENERGY_TOTAL).svalue == "0;5974"
+    assert unit_for(units, WATER_TOTAL).svalue == "849"
+    units = plan_washer(washer_with(**{ENERGY_TOTAL: model.Value("n/a", "Wh")}))
+    meters = units_for(units, ENERGY_TOTAL)
+    assert len(meters) == 1
+    assert (meters[0].create, meters[0].has_value) == (False, False)
+
+
+def test_existing_value_device_keeps_its_kind():
+    app = washer_with(**{ENERGY_TOTAL: model.Value(6293, "Wh")})
+    state = persistence.State()
+    state.unit_alloc[WASHER_HA] = {ENERGY_TOTAL: 40}
+    state.unit_kinds[WASHER_HA] = {"40": "custom"}
+    unit = unit_for(plan_washer(app, state), ENERGY_TOTAL)
+    assert (unit.unit, unit.type_name, unit.type_code, unit.svalue) == (40, "Custom", None, "6293")

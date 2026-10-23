@@ -38,6 +38,8 @@ _USER_KEYS = {
     "BSH.Common.Error.RemoteControlNotActive",
     "BSH.Common.Error.RemoteStartNotActive",
     "BSH.Common.Error.LockedByLocalControl",
+    # The appliance refused without a reason; the same write often succeeds seconds later.
+    "BSH.Common.Error.400.BadRequest",
     "SDK.Error.WrongDoorState",
     "SDK.Error.Cooking.Oven.Status.FrontPanelOpen",
     "SDK.Error.Cooking.Oven.Status.MeatprobePlugged",
@@ -76,6 +78,12 @@ _USER_MESSAGES = {
         "nl": (
             "{a} wordt op het bedieningspaneel bediend; probeer het over enkele seconden opnieuw"
         ),
+    },
+    "BSH.Common.Error.400.BadRequest": {
+        "en": "{a} refused it without a reason; check that it is switched on, or try again in a"
+        " few seconds",
+        "nl": "{a} weigerde het zonder reden; controleer of het aan staat, of probeer het over"
+        " enkele seconden opnieuw",
     },
     "SDK.Error.WrongDoorState": {
         "en": "The door of {a} is not closed",

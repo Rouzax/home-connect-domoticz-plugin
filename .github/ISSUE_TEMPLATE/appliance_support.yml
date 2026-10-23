@@ -1,0 +1,79 @@
+name: Appliance support
+description: An appliance where devices are missing, oddly named, or show a raw or wrong value.
+labels: ["appliance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful kind of report for this project.
+
+        The plugin is developed against a handful of real appliances, and Home Connect appliances
+        differ a lot: each type, and often each model, reports its own options, settings and
+        messages. Values the plugin has no name for get Home Connect's own name and are created
+        hidden; a report like this is how they get a proper name, a unit or the right device.
+
+        The log at **Debug level Verbose** shows every value an appliance reports, one line per
+        item with its key, for example
+        `event type="NOTIFY" appliance="Dryer" key="LaundryCare.Dryer.Option.DryingTarget" value="..."`.
+        Those keys and values are what makes a report actionable. They contain no identifiers,
+        but remove appliance names you do not want public.
+
+  - type: input
+    id: appliance
+    attributes:
+      label: Appliance brand and type
+      description: For example "Neff oven", "Bosch washer-dryer", "Siemens coffee machine".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: situation
+    attributes:
+      label: What is the situation?
+      options:
+        - "Some devices are missing"
+        - "A device has an English or raw name"
+        - "A device shows a raw value (for example a key ending in .EnumType...)"
+        - "A device shows a wrong value compared with the Home Connect app"
+        - "Control does not work for this appliance"
+        - "Something else"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What is missing or wrong
+      description: Which device, what it shows, and what the Home Connect app shows instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Domoticz log at Verbose
+      description: >-
+        Set Debug level to Verbose, use the appliance (start or change a program), then paste the
+        lines for this appliance. Set Debug level back to None afterwards: Verbose fills the log
+        quickly.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in the log line "Initialized version X, author 'Rouzax'".
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I removed Client ID, Client Secret, sign-in codes and device IDs from everything I pasted above.
+          required: true
+        - label: I am willing to test a fix with this appliance.
+          required: false

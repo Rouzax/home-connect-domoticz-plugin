@@ -17,7 +17,8 @@ import text
 
 # Device types whose value is a number: an empty planned value means "not reported", and nothing
 # is written rather than a fabricated zero (spec 6.4).
-_NUMERIC_TYPES = frozenset({"Set Point", "Temperature", "Percentage", "Custom"})
+# Meters count too: a kWh device by name, a counter by its numeric type_code.
+_NUMERIC_TYPES = frozenset({"Set Point", "Temperature", "Percentage", "Custom", "kWh"})
 _SELECTOR_SWITCHTYPE = 18
 _LOGGERS = {"error": "Error", "status": "Status", "debug": "Debug", "log": "Log"}
 # Debug level to Domoticz.Debugging() mask: 2 shows only this plugin's own Debug lines, 1 adds
@@ -83,7 +84,8 @@ def _skips_value(update: planner.DeviceUpdate) -> bool:
     """
     if not update.has_value:
         return True
-    return update.svalue == "" and update.type_name in _NUMERIC_TYPES
+    numeric = update.type_code is not None or update.type_name in _NUMERIC_TYPES
+    return update.svalue == "" and numeric
 
 
 def _changed(unit, update: planner.DeviceUpdate) -> bool:
@@ -119,11 +121,16 @@ def _where(update: planner.DeviceUpdate) -> str:
 
 def _create(devices, update: planner.DeviceUpdate):
     """Create the unit; None when Domoticz did not register it."""
+    # A type without a Python TypeName (an RFXMeter counter) is created by number instead.
+    if update.type_code is not None:
+        type_args = {"Type": update.type_code[0], "Subtype": update.type_code[1]}
+    else:
+        type_args = {"TypeName": update.type_name}
     new_unit = Domoticz.Unit(
         Name=update.name,
         DeviceID=update.device_id,
         Unit=update.unit,
-        TypeName=update.type_name,
+        **type_args,
         Options=dict(update.options),
         Switchtype=update.switchtype,
         Used=update.used,

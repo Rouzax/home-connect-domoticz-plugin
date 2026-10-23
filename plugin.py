@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
-<plugin key="homeconnect" name="Home Connect" author="Rouzax" version="0.1.0" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
+<plugin key="homeconnect" name="Home Connect" author="Rouzax" version="0.1.0-beta.1" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
         <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
@@ -18,7 +18,7 @@
             <description>The Client ID of your application on the Home Connect developer portal (developer.home-connect.com).</description>
         </param>
         <param field="Password" label="Client Secret" width="320px" password="true">
-            <description>Leave empty: a Device Flow application needs no secret. Fill it in only if your application shows one.</description>
+            <description>Optional: you can leave it empty, the plugin signs in without it. If you enter the secret your application shows on the developer portal, the plugin sends it when it signs in and renews its sign-in.</description>
         </param>
         <param field="AllowControl" type="boolean" label="Allow control" default="false">
             <description>Lets Domoticz, including scenes, timers and scripts, choose programs, change settings and start or stop appliances. A script or a misclick can then start a program; an appliance only accepts a start while remote start is switched on at the appliance itself.</description>
@@ -29,6 +29,14 @@
                 <option label="Same as Domoticz" value="auto" default="true"/>
                 <option label="English" value="en"/>
                 <option label="Nederlands" value="nl"/>
+            </options>
+        </param>
+        <param field="ScreenMessages" label="On-screen messages" width="220px">
+            <description>What a command you give shows on screen, in every open Domoticz browser: why it was refused or failed and what to do next, or also when it was done. Needs Domoticz 2026.1 or newer; the Domoticz log always has every result.</description>
+            <options>
+                <option label="Problems" value="problems" default="true"/>
+                <option label="Problems and confirmations" value="all"/>
+                <option label="Off" value="off"/>
             </options>
         </param>
         <param field="SignOut" type="boolean" label="Sign out" default="false">
@@ -73,6 +81,7 @@ if TYPE_CHECKING:
     import persistence
     import planner
     import scheduler
+    import signin
     import sse
     import text
     import workers
@@ -87,14 +96,6 @@ SHUTDOWN_DEADLINE_S = 6.0
 VERBOSE_FIELD_CAP = 2000
 DRAIN_LIMIT = 500
 DAILY_CHECK_EVERY = 60
-# Retries of the discovery listing, the device-code request (both from RETRY_BACKOFF_FIRST_S) and
-# a token refresh (from RETRY_LATER_S) back off to RETRY_BACKOFF_MAX_S, doubling, and start again
-# after a success: a fixed short delay during a long outage would spend the background or auth
-# ceiling and leave nothing for when the API returns.
-RETRY_LATER_S = 300.0
-RETRY_BACKOFF_FIRST_S = 60.0
-RETRY_BACKOFF_MAX_S = 3600.0
-REFUSED_RETRY_S = 60.0
 # Unit 1 says "(last known)" once no stream has delivered an event for this long. A dropped
 # stream is live again after its first reconnect backoff (at most 1.2 * workers.BACKOFF_START_S)
 # plus its first event (replays arrive at once, a keep-alive within workers.WATCHDOG_S), seen at
@@ -105,9 +106,6 @@ WORKER_RESTARTS_PER_HOUR = 3
 RESTART_WINDOW_S = 3600.0
 SLOW_RESTART_INTERVAL_S = 3600.0
 AWAITING_TOKEN_MAX = 64
-REAUTHORIZE_LEVEL = 10
-REFRESH_LEVEL = 20
-_MESSAGE_MAX = 150
 # Home Connect haIds are 12 digits or longer brand-model-serial strings. A shorter Device ID left
 # by something else must not enter the redactor, which would blank that text in every log line.
 _MIN_SEEDED_ID_LEN = 12
@@ -127,7 +125,7 @@ def _load_modules() -> None:
     """Project modules use 3.11 syntax and APIs, so they are imported only after the version
     check; a top-level import would fail before onStart could explain why."""
     global auth, budget, catalog, config, control, coordinator, domoticz_api, errors, hc_client
-    global model, persistence, planner, scheduler, sse, text, workers
+    global model, persistence, planner, scheduler, signin, sse, text, workers
     import auth
     import budget
     import catalog
@@ -141,6 +139,7 @@ def _load_modules() -> None:
     import persistence
     import planner
     import scheduler
+    import signin
     import sse
     import text
     import workers
@@ -177,6 +176,7 @@ def _parameters() -> dict:
 class _PluginState:
     req: workers.RequestWorker
     stream: workers.StreamWorker
+    hooks: signin.Hooks
 
     def __init__(
         self, cfg: config.Config, saved: persistence.State, saver: domoticz_api.StateSaver
@@ -198,14 +198,14 @@ class _PluginState:
         self.flow: auth.DeviceCode | None = None
         self.code_in_flight = False
         self.flow_retry_at: float | None = None
-        self.flow_backoff = RETRY_BACKOFF_FIRST_S
+        self.flow_backoff = signin.RETRY_BACKOFF_FIRST_S
         self.next_poll = 0.0
         self.poll_in_flight = False
         # Refresh is single-flight here: the worker queue never coalesces token jobs.
         self.refresh_in_flight = False
         self.refresh_wanted = False
         self.refresh_next = 0.0
-        self.refresh_backoff = RETRY_LATER_S
+        self.refresh_backoff = signin.RETRY_LATER_S
         self.after_refresh: list[scheduler.Job] = []
         self.refresh_retried: set[tuple] = set()
         # Set by a refresh, cleared by any sign of life from the stream: a stream 401 while it
@@ -217,7 +217,7 @@ class _PluginState:
         self.kicked = False
         self.full_rediscovery = False
         self.list_retry_at: float | None = None
-        self.list_backoff = RETRY_BACKOFF_FIRST_S
+        self.list_backoff = signin.RETRY_BACKOFF_FIRST_S
         self.stream_started = False
         self.stream_dropped = False
         self.not_live_since: float | None = None
@@ -252,6 +252,10 @@ def _s() -> _PluginState:
     if _state is None:
         raise RuntimeError("plugin not started")
     return _state
+
+
+def _hooks() -> signin.Hooks:
+    return _s().hooks
 
 
 # -- logging ------------------------------------------------------------------------------------
@@ -315,13 +319,7 @@ def _note(name: str, **values: str) -> str:
     return catalog.note(name, _s().cfg.language, **values)
 
 
-# -- auth ---------------------------------------------------------------------------------------
-
-
-def _set_auth(new_state: auth.AuthState) -> None:
-    s = _s()
-    s.auth_state = new_state
-    s.state.auth_state = new_state.value
+# -- queue and discovery ------------------------------------------------------------------------
 
 
 def _submit(job: scheduler.Job) -> bool:
@@ -344,93 +342,9 @@ def _park_all() -> None:
     s.stream.park()
 
 
-def _backoff(delay: float) -> tuple[float, float]:
-    """(when to retry, the delay after that) for a retry that backs off."""
-    return _mono() + delay, min(RETRY_BACKOFF_MAX_S, delay * 2)
-
-
-def _retry_device_code_later() -> None:
-    s = _s()
-    s.flow_retry_at, s.flow_backoff = _backoff(s.flow_backoff)
-
-
 def _retry_list_later() -> None:
     s = _s()
-    s.list_retry_at, s.list_backoff = _backoff(s.list_backoff)
-
-
-def _request_device_code() -> None:
-    s = _s()
-    s.flow_retry_at = None
-    if s.code_in_flight:
-        return
-    s.code_in_flight = _submit(scheduler.device_code_job(s.cfg.client_id))
-    if not s.code_in_flight:
-        _retry_device_code_later()
-
-
-def _start_flow() -> None:
-    s = _s()
-    s.flow = None  # a device code is never reused (spec 8.1)
-    s.poll_in_flight = False
-    _request_device_code()
-
-
-def _keeps_state_during_flow(state: auth.AuthState) -> bool:
-    """States a Re-authorize leaves in place until the new grant arrives (spec 8.5): the
-    current tokens are kept, and a flow that fails must not turn them into EXPIRED_CODE."""
-    return state in (
-        auth.AuthState.AUTHORIZED,
-        auth.AuthState.NEEDS_REAUTH,
-        auth.AuthState.NEEDS_USER_ACTION,
-    )
-
-
-def _end_flow(note: str = "") -> None:
-    """A device flow ended without a grant: a state that holds tokens stays, anything else
-    becomes EXPIRED_CODE."""
-    s = _s()
-    s.flow, s.poll_in_flight, s.flow_retry_at = None, False, None
-    if s.auth_state in (auth.AuthState.NEEDS_REAUTH, auth.AuthState.NEEDS_USER_ACTION):
-        _park_all()  # Re-authorize unparked the request worker; the old tokens are still dead
-    elif s.auth_state != auth.AuthState.AUTHORIZED:
-        _set_auth(auth.AuthState.EXPIRED_CODE)
-    if note:
-        s.user_message = note
-
-
-def _poll() -> None:
-    s = _s()
-    flow = s.flow
-    if flow is None:
-        return
-    job = scheduler.token_poll_job(s.cfg.client_id, flow.device_code, s.cfg.client_secret)
-    s.poll_in_flight = _submit(job)
-    if not s.poll_in_flight:
-        s.next_poll = _mono() + flow.interval
-
-
-def _request_refresh() -> None:
-    s = _s()
-    s.refresh_wanted = True
-    if s.refresh_in_flight or s.tokens is None or _mono() < s.refresh_next:
-        return
-    s.refresh_in_flight = _submit(
-        scheduler.refresh_job(s.tokens.refresh_token, s.cfg.client_secret)
-    )
-    if not s.refresh_in_flight:
-        s.refresh_next = _mono() + REFUSED_RETRY_S
-
-
-def _tokens_changed(tokens: persistence.Tokens) -> None:
-    s = _s()
-    s.remember(tokens.access_token, tokens.refresh_token)
-    s.tokens = tokens
-    s.state.tokens = tokens
-    s.saver.after_token_change()  # at once, so a crash right after approval keeps the grant
-    s.req.set_token(tokens.access_token, s.auth_generation)
-    if s.stream_started:
-        s.stream.set_token(tokens.access_token)
+    s.list_retry_at, s.list_backoff = signin.backoff(_hooks(), s.list_backoff)
 
 
 def _discover() -> None:
@@ -439,41 +353,6 @@ def _discover() -> None:
     s.list_retry_at = None
     if not _submit(s.sched.list_job(s.model)):
         _retry_list_later()
-
-
-def _grant(tokens: persistence.Tokens) -> None:
-    s = _s()
-    s.flow, s.poll_in_flight, s.user_message = None, False, ""
-    # A new grant advances the generation, so nothing queued under the old one is sent (4.3).
-    s.auth_generation += 1
-    s.refresh_in_flight = s.refresh_wanted = s.stream_token_fresh = False
-    s.refresh_next = 0.0
-    s.refresh_backoff = RETRY_LATER_S
-    _notes(s.coord.drop(s.after_refresh, _mono(), "stale"))
-    s.after_refresh.clear()
-    s.refresh_retried.clear()
-    _tokens_changed(tokens)
-    _set_auth(auth.AuthState.AUTHORIZED)
-    s.req.unpark()
-    s.stream.unpark()
-    s.latched.discard("authorization_lost")
-    _emit("status", "signed_in")
-    _discover()
-
-
-def _lose_authorization(
-    new_state: auth.AuthState, reason: str, refused: scheduler.Job | None = None
-) -> None:
-    s = _s()
-    _set_auth(new_state)
-    _park_all()
-    # Writes answered 401 (held for a refreshed token, or `refused`) were never executed.
-    unsent = [*s.after_refresh, refused]
-    s.refresh_wanted = s.stream_token_fresh = False
-    s.after_refresh.clear()
-    s.refresh_retried.clear()
-    _emit_once("authorization_lost", "error", "authorization_lost", reason=reason)
-    _notes(s.coord.abandon(_mono(), unsent=unsent))
 
 
 # -- workers ------------------------------------------------------------------------------------
@@ -563,131 +442,6 @@ def _supervise() -> None:
 # -- results ------------------------------------------------------------------------------------
 
 
-def _handle_device_code(r: workers.Result) -> None:
-    s = _s()
-    s.code_in_flight = False
-    code = auth.parse_device_code(r.body, _wall()) if r.status == 200 else None
-    if code is None:
-        if _transient(r.status):
-            _retry_device_code_later()
-            _emit("debug", "authorization_start_retry", status=r.status)
-            return
-        err = errors.parse_oauth_error(r.status, r.body) if r.status >= 400 else None
-        reason = err.code if err else "unexpected_answer"
-        _emit("error", "authorization_start_failed", status=r.status, reason=reason)
-        _end_flow(_note("start_failed", reason=text.clean_label(reason, _MESSAGE_MAX)))
-        return
-    s.remember(code.device_code)
-    s.flow = code
-    s.flow_backoff = RETRY_BACKOFF_FIRST_S
-    s.next_poll = _mono() + code.interval
-    if s.auth_state == auth.AuthState.AUTHORIZED:
-        s.user_message = ""  # a note left by an earlier Re-authorize no longer applies
-    elif not _keeps_state_during_flow(s.auth_state):
-        s.user_message = ""
-        _set_auth(auth.AuthState.AWAITING_USER)
-    until = planner.clock(code.expires_at)
-    _emit("status", "sign_in_needed", link=code.link, code=code.user_code, valid_until=until)
-
-
-def _handle_poll(r: workers.Result) -> None:
-    s = _s()
-    flow = s.flow
-    sent = (r.job.form or {}).get("device_code")
-    if flow is None or sent != flow.device_code:
-        return  # an answer for a code that has since been replaced
-    s.poll_in_flight = False
-    if r.status == 200:
-        tokens = auth.parse_tokens(r.body, _wall(), s.id_hash)
-        if tokens is not None:
-            _grant(tokens)
-            return
-    err = errors.parse_oauth_error(r.status, r.body)
-    code = err.code
-    if r.status < 400 or _transient(r.status) or code == "unknown":
-        # As for refresh: only a 4xx with an OAuth error code is Home Connect's verdict. A
-        # network failure, an unusable 200, or a proxy, captive portal or WAF page decides
-        # nothing, so the flow keeps polling until its code expires.
-        outcome = "pending"
-    else:
-        outcome = auth.poll_outcome(err)
-    if outcome in ("pending", "slow_down"):
-        if outcome == "slow_down":
-            s.flow = flow = replace(flow, interval=flow.interval + 5)
-        s.next_poll = _mono() + flow.interval
-        return
-    _emit("status", "sign_in_ended", outcome=outcome, reason=code)
-    if outcome == "denied":
-        _end_flow(_note("denied"))
-    elif outcome == "error":
-        _end_flow(_note("flow_failed", reason=text.clean_label(code, _MESSAGE_MAX)))
-    else:
-        _end_flow()
-
-
-def _handle_refresh(r: workers.Result) -> None:
-    s = _s()
-    s.refresh_in_flight = False
-    if r.job.auth_generation != s.auth_generation:
-        return  # the grant it refreshed has since been replaced
-    tokens = auth.parse_tokens(r.body, _wall(), s.id_hash) if r.status == 200 else None
-    if tokens is not None:
-        s.refresh_wanted = False
-        s.refresh_next = 0.0
-        s.refresh_backoff = RETRY_LATER_S
-        s.stream_token_fresh = s.stream_started
-        if s.flow is None:
-            s.user_message = ""  # a working grant outlives an earlier failed Re-authorize note
-        _tokens_changed(tokens)
-        waiting, s.after_refresh = s.after_refresh, []
-        for job in waiting:
-            _submit(job)
-        return
-    err = errors.parse_oauth_error(r.status, r.body)
-    # Only a 4xx carrying an OAuth error code is Home Connect's refusal. Anything else (no
-    # answer, a server error, a 3xx or 204, or an HTML page from a proxy, captive portal or WAF)
-    # did not come from the token endpoint's logic and is retried later.
-    if r.status < 400 or _transient(r.status) or err.code == "unknown":
-        s.refresh_next, s.refresh_backoff = _backoff(s.refresh_backoff)
-        _emit("debug", "refresh_retry", status=r.status)
-        return
-    # A definite refusal never fixes itself, so it is never retried on a timer: an unmapped code
-    # would otherwise spend the auth ceiling with nothing on the account device (spec 7.1).
-    new_state = auth.refresh_failure(err) or auth.AuthState.NEEDS_USER_ACTION
-    if err.code in auth.CLIENT_REJECTED:
-        s.user_message = _note("client_rejected")
-    elif err.code == "access_denied":
-        # Shown to the user (escaped by the planner), never logged (spec 7.11).
-        s.user_message = text.clean_label(err.description, _MESSAGE_MAX) or err.code
-    elif new_state == auth.AuthState.NEEDS_USER_ACTION:
-        s.user_message = _note("refresh_refused", reason=text.clean_label(err.code, _MESSAGE_MAX))
-    _lose_authorization(new_state, err.code)
-
-
-def _transient(status: int) -> bool:
-    """No answer, a timeout, a 429 or a server error: worth asking again later."""
-    return status in (0, 408, 429) or status >= 500
-
-
-def _revoke_done(failed: bool, **outcome: object) -> None:
-    """One best-effort attempt per token (spec 8.6): answered or refused, it is not repeated.
-    The outcome is logged once at Status with the status and error key only, never the token."""
-    s = _s()
-    s.revoke_in_flight = False
-    if s.revoke_tokens:
-        s.revoke_tokens.pop(0)
-    if failed:
-        detail = "remove the plugin's access in your Home Connect account"
-        _emit("status", "revoke_failed", **outcome, detail=detail)
-    else:
-        _emit("status", "revoked", **outcome)
-
-
-def _handle_revoke(r: workers.Result) -> None:
-    failed = r.status == 0 or r.status >= 400
-    _revoke_done(failed, status=r.status, key=r.error_key or r.category or "none")
-
-
 def _signature(job: scheduler.Job) -> tuple:
     # Survives the worker's own requeues and retries, which copy the job with replace().
     return (job.kind, job.ha_id, job.key, job.issued_seq)
@@ -700,7 +454,7 @@ def _refresh_and_retry(job: scheduler.Job) -> None:
     if s.auth_state != auth.AuthState.AUTHORIZED:
         return
     if _signature(job) in s.refresh_retried:
-        _lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_token", job)
+        signin.lose_authorization(s, _hooks(), auth.AuthState.NEEDS_REAUTH, "invalid_token", job)
         return
     s.refresh_retried.add(_signature(job))
     # A 401 means a write was not executed, so sending it again is no retry (spec 7.6); if the
@@ -709,7 +463,7 @@ def _refresh_and_retry(job: scheduler.Job) -> None:
         s.after_refresh.append(replace(job, retried=True))
     else:
         _notes(s.coord.drop([job], _mono(), "queue_full"))
-    _request_refresh()
+    signin.request_refresh(s, _hooks())
 
 
 def _answered(r: workers.Result) -> bool:
@@ -742,7 +496,7 @@ def _handle_api(r: workers.Result) -> None:
     # the sequence numbers this application moves (spec 7.4).
     if job.kind == "list":
         if r.status == 200:
-            s.list_backoff = RETRY_BACKOFF_FIRST_S
+            s.list_backoff = signin.RETRY_BACKOFF_FIRST_S
             _apply_list(data, job)
         else:
             _retry_list_later()
@@ -820,17 +574,17 @@ def _handle_refused(message: workers.Refused) -> None:
             s.poll_in_flight = False
         if reason in ("ceiling", "total"):
             _emit("status", "sign_in_stopped", reason="daily sign-in budget used up")
-            _end_flow(_note("auth_exhausted"))
+            signin.end_flow(s, _hooks(), _note("auth_exhausted"))
         elif job.kind == "device_code":
-            _retry_device_code_later()
+            signin.retry_device_code_later(s, _hooks())
         elif s.flow is not None:
             s.next_poll = mono + s.flow.interval
     elif job.kind == "refresh":
         s.refresh_in_flight = False
         s.refresh_wanted = True
-        s.refresh_next = mono + REFUSED_RETRY_S
+        s.refresh_next = mono + signin.REFUSED_RETRY_S
     elif job.kind == "revoke":
-        _revoke_done(True, refused=reason)
+        signin.revoke_done(s, _hooks(), True, refused=reason)
     elif job.kind in ("command", "verify") and not (
         reason == "no_token" and s.auth_state == auth.AuthState.AUTHORIZED
     ):
@@ -904,11 +658,12 @@ def _handle(message: object) -> None:
     if getattr(message, "generation", None) not in (s.req.generation, s.stream.generation):
         return  # from a worker that has been replaced
     if isinstance(message, workers.Result):
+        hooks = _hooks()
         handlers = {
-            "device_code": _handle_device_code,
-            "token_poll": _handle_poll,
-            "refresh": _handle_refresh,
-            "revoke": _handle_revoke,
+            "device_code": lambda r: signin.handle_device_code(s, hooks, r),
+            "token_poll": lambda r: signin.handle_poll(s, hooks, r),
+            "refresh": lambda r: signin.handle_refresh(s, hooks, r),
+            "revoke": lambda r: signin.handle_revoke(s, hooks, r),
             "command": _handle_command,
             "verify": _handle_verify,
         }
@@ -924,9 +679,9 @@ def _handle(message: object) -> None:
             return
         if s.stream_token_fresh:
             # Refused straight after a refresh: one refresh per 401, as for REST (spec 7.1).
-            _lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_token")
+            signin.lose_authorization(s, _hooks(), auth.AuthState.NEEDS_REAUTH, "invalid_token")
         else:
-            _request_refresh()
+            signin.request_refresh(s, _hooks())
     elif isinstance(message, workers.LogRecord):
         _emit(message.level, message.event, **message.fields)
     elif isinstance(message, workers.Refused):
@@ -973,40 +728,11 @@ def _kick() -> None:
             # Refresh first: a listing sent with an expired token would only spend a 401.
             s.full_rediscovery = True
             s.after_refresh.append(s.sched.list_job(s.model))
-            _request_refresh()
+            signin.request_refresh(s, _hooks())
         else:
             _discover()
     elif s.auth_state == auth.AuthState.UNAUTHORIZED:
-        _start_flow()
-
-
-def _send_revokes() -> None:
-    s = _s()
-    if s.revoke_tokens and not s.revoke_in_flight:
-        job = scheduler.revoke_job(s.revoke_tokens[0], s.cfg.client_id, s.cfg.client_secret)
-        s.revoke_in_flight = _submit(job)
-
-
-def _auth_timers() -> None:
-    s = _s()
-    mono, now = _mono(), _wall()
-    retry = s.flow_retry_at
-    if retry is not None and mono >= retry and s.auth_state != auth.AuthState.SIGNED_OUT:
-        _request_device_code()
-    flow = s.flow
-    if flow is not None:
-        if now >= flow.expires_at:
-            detail = "choose Sign in again on the Home Connect actions device"
-            _emit("status", "sign_in_code_expired", detail=detail)
-            _end_flow()
-        elif mono >= s.next_poll and not s.poll_in_flight:
-            _poll()
-    if s.auth_state != auth.AuthState.AUTHORIZED or s.tokens is None:
-        return
-    if s.refresh_wanted or auth.refresh_due(s.tokens, now):
-        _request_refresh()
-    if s.list_retry_at is not None and mono >= s.list_retry_at:
-        _discover()
+        signin.start_flow(s, _hooks())
 
 
 def _scheduled_work() -> None:
@@ -1121,10 +847,33 @@ def _export_names() -> None:
 # -- control ------------------------------------------------------------------------------------
 
 
+def _on_screen(event: str, label: str, command: str, reason: str, device: str = "") -> None:
+    """Show a command's result in every open Domoticz browser, under the On-screen messages
+    setting. Domoticz before 2026.1 has no SendNotification for plugins: the log line is then
+    all there is."""
+    s = _s()
+    send = getattr(Domoticz, "SendNotification", None)
+    if send is None or not control.shows_on_screen(event, s.cfg.screen_messages):
+        return
+    message = control.screen_message(event, device, label, command, reason, s.cfg.language)
+    if message is None:
+        return
+    try:
+        # Positional: the keyword names differ between Domoticz versions. Only the browser
+        # subsystem: an empty one would also mail and push it to every configured notifier.
+        send(message[0], message[1], 0, "", "", "browser")
+    except Exception as exc:
+        # Best effort: the command's log line is written already, and its writes must still go.
+        _emit("debug", "screen_message_failed", error=type(exc).__name__)
+
+
 def _notes(notes: list[coordinator.Note]) -> None:
     s = _s()
     for note in notes:
         _emit(note.level, note.event, appliance=_label(note.ha_id), **note.fields)
+        if note.screen:
+            command, reason = note.fields.get("command", ""), note.fields.get("reason", "")
+            _on_screen(note.event, _label(note.ha_id), str(command), str(reason))
         app = s.model.appliances.get(note.ha_id)
         # A delayed-start move is held only once Home Connect confirmed it (spec 6.3), and only
         # while the program still waits: a time held after it started would apply to the next.
@@ -1163,6 +912,7 @@ def _appliance_command(ha: str, unit: int, command: str, level: object) -> None:
     if isinstance(decision, control.Refusal):
         device, reason = domoticz_api.unit_name(_devices(), ha, unit), decision.reason
         _emit(decision.level, decision.event, appliance=_label(ha), device=device, reason=reason)
+        _on_screen(decision.event, _label(ha), "", reason, device=device)
         return
     hold = None
     if isinstance(decision, control.Hold):
@@ -1245,6 +995,18 @@ def _start() -> None:
     domoticz_api.debugging(cfg.debug_level)
     saved, fell_back = domoticz_api.load_state()
     s = _state = _PluginState(cfg, saved, domoticz_api.StateSaver(saved))
+    # Built once; the clocks go through lambdas so a test that replaces _mono or _wall still
+    # moves the sign-in timers.
+    s.hooks = signin.Hooks(
+        emit=_emit,
+        emit_once=_emit_once,
+        submit=_submit,
+        notes=_notes,
+        park_all=_park_all,
+        discover=_discover,
+        mono=lambda: _mono(),
+        wall=lambda: _wall(),
+    )
     s.remember(cfg.client_secret)
     # Existing devices are named after appliances: their haIds must be redacted from the first
     # line on, before discovery has told the model about them.
@@ -1312,7 +1074,7 @@ def _start() -> None:
         s.revoke_tokens.append(revoke.refresh_token)
         s.auth_generation += 1
     s.tokens = saved.tokens = keep
-    _set_auth(state)
+    signin.set_auth(s, state)
     _start_request_worker()
     _start_stream_worker()
     domoticz_api.heartbeat(HEARTBEAT_S)
@@ -1399,8 +1161,8 @@ def onHeartbeat():
         _drain()
         if not s.kicked:
             _kick()
-        _send_revokes()
-        _auth_timers()
+        signin.send_revokes(s, _hooks())
+        signin.auth_timers(s, _hooks())
         _scheduled_work()
         _control_tick()
         _supervise()
@@ -1420,30 +1182,10 @@ def onCommand(DeviceID, Unit, Command, Level, Color):
         return
     try:
         if DeviceID == planner.ACCOUNT_DEVICE and Unit == planner.ACCOUNT_ACTIONS:
-            _account_action(int(Level or 0))
+            signin.account_action(s, _hooks(), int(Level or 0))
             return
         _appliance_command(str(DeviceID), int(Unit), str(Command), Level)
         _write_devices()  # a commanded value shows at once, as a request (spec 7.6)
         _pace_heartbeat()
     except Exception as exc:
         Domoticz.Error(f"Home Connect: command failed ({type(exc).__name__})")
-
-
-def _account_action(level: int) -> None:
-    s = _s()
-    if level == REAUTHORIZE_LEVEL:
-        if s.auth_state == auth.AuthState.SIGNED_OUT:
-            _emit(
-                "status", "reauthorize_refused", detail="turn off Sign out in the hardware settings"
-            )
-            return
-        if s.auth_state in (auth.AuthState.NEEDS_REAUTH, auth.AuthState.NEEDS_USER_ACTION):
-            s.req.unpark()  # spec 8.5
-        _emit("status", "reauthorize_requested")
-        # Keeps the current tokens until the new grant arrives (spec 8.5).
-        _start_flow()
-    elif level == REFRESH_LEVEL:
-        if s.auth_state == auth.AuthState.AUTHORIZED:
-            _discover()
-        else:
-            _emit("status", "refresh_appliances_refused", detail="not signed in")

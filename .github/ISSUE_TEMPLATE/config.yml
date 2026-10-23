@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://rouzax.github.io/home-connect-domoticz-plugin/
+    about: Installation, sign-in, every device, control and a troubleshooting page organised by symptom.
+  - name: Report a security vulnerability
+    url: https://github.com/Rouzax/home-connect-domoticz-plugin/security/advisories/new
+    about: Please do NOT open a public issue for anything security related.

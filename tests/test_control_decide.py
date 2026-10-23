@@ -66,6 +66,12 @@ def oven(state="Ready"):
     return app
 
 
+def door_oven():
+    app = oven()
+    app.cache.commands.append(catalog.OPEN_DOOR)
+    return app
+
+
 def make_state():
     return persistence.State(
         unit_alloc={
@@ -232,7 +238,7 @@ def test_gates_that_have_passed_let_a_start_through(snap):
 
 
 def test_stop_needs_a_running_program_unless_it_cancels_a_waiting_start():
-    assert decide(9, level=STOP).reason == "No program is running on Oven"
+    assert decide(9, level=STOP).reason == "No program is running on Oven; there is nothing to stop"
     cancel = decide(9, level=STOP, pending_start=True)
     assert (cancel.action, cancel.request) == ("stop", None)
     running = decide(9, level=STOP, app=oven("Run"))
@@ -266,10 +272,15 @@ def test_pause_and_resume_follow_the_state_and_the_documented_types():
     assert decide(9, level=RESUME, app=oven("Pause")).key == catalog.RESUME
     dishwasher = oven("Run")
     dishwasher.type = "Dishwasher"
-    assert decide(9, level=PAUSE, app=dishwasher).reason == "Pause is not offered by Oven"
+    assert (
+        decide(9, level=PAUSE, app=dishwasher).reason
+        == "Pause is not offered by Oven; use the appliance itself"
+    )
     dishwasher.cache.commands.append(catalog.PAUSE)
     assert isinstance(decide(9, level=PAUSE, app=dishwasher), control.Intent)
-    door = decide(9, level=planner.ACTION_LEVELS["open_door"])
+    app = oven()
+    app.cache.commands.append(catalog.OPEN_DOOR)
+    door = decide(9, level=planner.ACTION_LEVELS["open_door"], app=app)
     assert (door.key, door.verify) == (catalog.OPEN_DOOR, "")
 
 
@@ -285,7 +296,7 @@ def test_acknowledge_needs_the_command_in_the_appliance_list():
     app = oven()
     app.cache.commands = []
     assert decide(planner.UNIT_ACK, command="On", app=app).reason == (
-        "Acknowledge is not offered by Oven"
+        "Acknowledge is not offered by Oven; use the appliance itself"
     )
 
 
@@ -306,7 +317,7 @@ def test_selecting_a_program_by_its_stable_level():
 def test_program_selector_refusals():
     assert decide(8, level=0).reason == control.message("choose_program", "en")
     assert decide(8, level=40).reason == control.message("level_unavailable", "en")
-    assert decide(8, level=30).reason == "Gone is not offered by Oven"
+    assert decide(8, level=30).reason == "Gone is not offered by Oven; choose another program"
     assert "stop it before" in decide(8, level=20, app=oven("Run")).reason
 
 
@@ -464,7 +475,10 @@ def test_settings_switch_and_power():
     assert "not known yet" in decide(planner.UNIT_POWER, command="On", app=app).reason
     app = oven()
     app.cache.setting_constraints[CHILD_LOCK] = {"access": "read"}
-    assert decide(LOCK_UNIT, command="On", app=app).reason == "Child lock cannot be changed"
+    assert (
+        decide(LOCK_UNIT, command="On", app=app).reason
+        == "Child lock cannot be changed from Domoticz"
+    )
 
 
 # -- delayed start -------------------------------------------------------------------------------
@@ -578,7 +592,7 @@ def spin_setup():
         (LOCK_UNIT, "On", 0, oven),
         (planner.UNIT_POWER, "On", 0, oven),
         (planner.UNIT_PROGRAM_SELECT, "Set Level", 20, oven),
-        (planner.UNIT_ACTIONS, "Set Level", planner.ACTION_LEVELS["open_door"], oven),
+        (planner.UNIT_ACTIONS, "Set Level", planner.ACTION_LEVELS["open_door"], door_oven),
         (planner.UNIT_ACTIONS, "Set Level", STOP, lambda: oven("Run")),
         (planner.UNIT_ACK, "On", 0, oven),
         (planner.UNIT_DELAYED_START, "Set Level", planner.delay_level(17 * 60), waiting),
@@ -643,7 +657,10 @@ def test_power_on_and_a_read_only_power_setting():
     assert decide(planner.UNIT_POWER, command="On").value == ON
     app = oven()
     app.cache.setting_constraints[catalog.POWER_STATE]["access"] = "read"
-    assert decide(planner.UNIT_POWER, command="On", app=app).reason == "Power cannot be changed"
+    assert (
+        decide(planner.UNIT_POWER, command="On", app=app).reason
+        == "Power cannot be changed from Domoticz"
+    )
 
 
 def test_an_active_program_without_a_reported_state_counts_as_running():
@@ -763,3 +780,60 @@ def test_an_option_value_left_from_another_program_is_sent():
         3,
     )
     assert isinstance(decide(SETPOINT_UNIT, level=180, app=running), control.Intent)
+
+
+# -- findings from the real-appliance control tests ----------------------------------------------
+
+
+@pytest.mark.parametrize("power", [STANDBY, "BSH.Common.EnumType.PowerState.Off"])
+def test_a_program_is_not_chosen_on_an_appliance_reported_off(power):
+    app = oven("Inactive")
+    app.settings[catalog.POWER_STATE] = model.Value(power)
+    assert decide(planner.UNIT_PROGRAM_SELECT, level=20, app=app).reason == (
+        "Oven is switched off; switch it on first"
+    )
+
+
+def test_a_program_is_chosen_when_the_power_is_on_or_not_reported():
+    app = oven()
+    app.settings[catalog.POWER_STATE] = model.Value(ON)
+    assert isinstance(decide(planner.UNIT_PROGRAM_SELECT, level=20, app=app), control.Intent)
+    assert isinstance(decide(planner.UNIT_PROGRAM_SELECT, level=20), control.Intent)
+
+
+def test_start_is_refused_while_the_door_is_reported_open():
+    app = oven()
+    app.status[catalog.DOOR_STATE] = model.Value("BSH.Common.EnumType.DoorState.Open")
+    reason = decide(planner.UNIT_ACTIONS, level=START, app=app).reason
+    assert reason == errors.user_message("SDK.Error.WrongDoorState", "Oven", "en")
+    for closed in ("Closed", "Locked"):
+        app.status[catalog.DOOR_STATE] = model.Value(f"BSH.Common.EnumType.DoorState.{closed}")
+        assert isinstance(decide(planner.UNIT_ACTIONS, level=START, app=app), control.Intent)
+
+
+def test_door_actions_need_the_command_in_the_appliance_list():
+    door = planner.ACTION_LEVELS["open_door"]
+    assert (
+        decide(9, level=door).reason == "Open door is not offered by Oven; use the appliance itself"
+    )
+    app = oven()
+    app.cache.commands.append(catalog.OPEN_DOOR)
+    assert decide(9, level=door, app=app).key == catalog.OPEN_DOOR
+
+
+def test_a_program_is_chosen_behind_a_power_on_not_confirmed_yet():
+    # A scene's "Power On, Program choice, Start" in one go: the selection is judged while the
+    # Power On write is still pending.
+    app = oven("Inactive")
+    app.settings[catalog.POWER_STATE] = model.Value(STANDBY)
+    pending = frozenset({catalog.POWER_STATE})
+    result = decide(planner.UNIT_PROGRAM_SELECT, level=20, app=app, pending_keys=pending)
+    assert isinstance(result, control.Intent)
+
+
+def test_the_operation_state_names_its_fix_before_an_open_door():
+    app = oven("Finished")
+    app.status[catalog.DOOR_STATE] = model.Value("BSH.Common.EnumType.DoorState.Open")
+    assert decide(planner.UNIT_ACTIONS, level=START, app=app).reason == (
+        "Oven is not ready to start (Finished); open the door or acknowledge the end first"
+    )

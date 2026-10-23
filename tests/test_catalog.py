@@ -140,3 +140,16 @@ def test_dishwasher_options_use_the_home_connect_app_names():
     ):
         assert catalog.name_for({}, key, "en") == en
         assert catalog.name_for({}, key, "nl") == nl
+
+
+def test_meters_name_their_quantity_in_both_languages():
+    water = catalog.meter("BSH.Common.Status.Program.All.Water.Consumed")
+    assert water is not None
+    assert (water.kind, water.units, water.divisor) == ("counter_total", "L", 1000)
+    assert water.quantity == ("Water", "Water")
+    assert water.reported == "ml"
+    energy = catalog.meter("BSH.Common.Status.Program.All.Energy.Consumed")
+    assert energy is not None and energy.kind == "energy_total"
+    assert energy.reported == "Wh"
+    assert catalog.meter("BSH.Common.Status.Program.All.Count.Completed") is None
+    assert catalog.pick(("Detergent", "Wasmiddel"), "nl") == "Wasmiddel"

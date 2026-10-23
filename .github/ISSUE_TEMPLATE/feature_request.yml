@@ -1,0 +1,73 @@
+name: Feature request
+description: Something the plugin should do that it does not do yet.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, a few things are deliberate design decisions rather than gaps, and are
+        explained in the docs:
+
+        - **Control is off by default.** Operating appliances from Domoticz needs Allow control,
+          and a start always needs remote start pressed on the appliance itself; that second
+          step is Home Connect's rule and cannot be bypassed.
+        - **The plugin uses only the official Home Connect cloud API**, under your own developer
+          account. Unofficial local protocols are out of scope.
+        - **It does not poll.** It follows Home Connect's event stream and stays well within the
+          daily request limit, so values arrive when the appliance reports them.
+        - **Values in seconds are shown in minutes**, and lifetime totals are Domoticz meters,
+          so Domoticz itself shows use per day, month and year.
+
+        If you want to argue with one of those, please do, but say why rather than just
+        restating the request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: >-
+        Describe the goal, not the implementation. What are you trying to see, automate or be
+        warned about?
+      placeholder: |
+        I want a notification when the dryer's condenser needs cleaning.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like the plugin to do?
+    validations:
+      required: false
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Where does the data come from?
+      description: >-
+        If you know the Home Connect key that carries it (from the log at Debug level Verbose, or
+        the Home Connect API documentation), say so. That turns a request into something that
+        can be built.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: control
+    attributes:
+      label: Would this send anything to the appliance?
+      description: Anything beyond reading is held to a higher bar.
+      options:
+        - "No, read-only"
+        - "Yes, it would change a setting or option"
+        - "Yes, it would start or stop something"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: appliance
+    attributes:
+      label: Appliance brand and type
+      description: Helps judge whether it would work across appliances or only on yours.
+    validations:
+      required: false

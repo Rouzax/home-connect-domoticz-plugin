@@ -14,6 +14,7 @@ def test_defaults():
     assert cfg.allow_control is False
     assert cfg.sign_out is False
     assert cfg.debug_level == 0
+    assert cfg.screen_messages == "problems"
     assert (cfg.language, cfg.accept_language) == ("en", "en-GB")
     assert cfg.hardware_id == "7"
     assert cfg.warnings == ()
@@ -64,3 +65,11 @@ def test_parse_domoticz_version():
     assert config.parse_domoticz_version("2025.2-1658-gf6aac1d0a") == (2025, 2)
     assert config.parse_domoticz_version("???") is None
     assert config.parse_domoticz_version("") is None
+
+
+def test_screen_messages_choice_and_an_unknown_one_warns():
+    for value in ("off", "problems", "all"):
+        assert config.parse_config(params(ScreenMessages=value)).screen_messages == value
+    cfg = config.parse_config(params(ScreenMessages="loud"))
+    assert cfg.screen_messages == "problems"
+    assert any("on-screen" in w for w in cfg.warnings)

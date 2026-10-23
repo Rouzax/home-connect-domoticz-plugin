@@ -23,14 +23,16 @@ class Unit:
         Image=0,
         Switchtype=0,
         Description="",
+        Type=0,
+        Subtype=0,
         **_kw,
     ):
         self.Name = Name
         self.DeviceID = DeviceID
         self.Unit = Unit
         self.TypeName = TypeName
-        self.Type = 0
-        self.SubType = 0
+        self.Type = Type
+        self.SubType = Subtype
         self.Options = dict(Options or {})
         self.Used = Used
         self.Image = Image
@@ -83,6 +85,7 @@ _module._log = []
 _module._heartbeat = None
 _module._debugging = 0
 _module._config = {}
+_module._notifications = []
 _module.Unit = Unit
 _module.Devices = Devices
 
@@ -109,6 +112,7 @@ def _configuration(config=None):
 
 
 _module.Configuration = _configuration
+_module.SendNotification = lambda *args: _module._notifications.append(args)
 
 
 def install():
@@ -118,6 +122,7 @@ def install():
     _module._heartbeat = None
     _module._debugging = 0
     _module._config = {}
+    _module._notifications.clear()
     sys.modules["Domoticz"] = _module
     sys.modules["DomoticzEx"] = _module
     return _module

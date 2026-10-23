@@ -13,76 +13,20 @@ import hc_client
 import persistence
 import planner
 import plugin
+import signin
 import sse
 import workers
 from tests import fakes
+from tests.conftest import CID, SECRET
 
 HA = "SIEMENS-HCS01OVN1-000000000001"
 HA2 = "BOSCH-HCS02DWH1-000000000002"
-CID = "CLIENTID0123456789"
-SECRET = "SECRET-VALUE-123"
 DEVICE_CODE = "DEVICE-CODE-VALUE"
 ACCESS = "ACCESS-TOKEN-VALUE"
 REFRESH = "REFRESH-TOKEN-VALUE"
 ACCESS2 = "ACCESS-TOKEN-SECOND"
 LINK = "https://api.home-connect.com/security/oauth/device_verify?user_code=ABCD-EFGH"
 RUN = "BSH.Common.EnumType.OperationState.Run"
-
-
-class Clock:
-    """Plugin monotonic clock that a test can move forward."""
-
-    def __init__(self):
-        self.offset = 0.0
-
-    def __call__(self):
-        return time.monotonic() + self.offset
-
-
-@pytest.fixture
-def clock(monkeypatch):
-    c = Clock()
-    monkeypatch.setattr(plugin, "_mono", c)
-    return c
-
-
-@pytest.fixture
-def run(domoticz, monkeypatch):
-    made = {"clients": []}
-
-    def client():
-        made["clients"].append(fakes.NoClient())
-        return made["clients"][-1]
-
-    def req(client_, b, results, generation, lang):
-        made["req"] = fakes.FakeRequestWorker(client_, b, results, generation, lang)
-        return made["req"]
-
-    def stream(client_, b, results, generation, lang):
-        made["stream"] = fakes.FakeStreamWorker(client_, b, results, generation, lang)
-        return made["stream"]
-
-    monkeypatch.setattr(plugin, "_new_request_worker", req)
-    monkeypatch.setattr(plugin, "_new_stream_worker", stream)
-    monkeypatch.setattr(plugin, "_new_client", client)
-
-    def start(**params):
-        base = {
-            "HardwareID": "1",
-            "Username": CID,
-            "Password": SECRET,
-            "Language": "en",
-            "DomoticzVersion": "2026.4",
-            "DeviceLanguage": "en",
-            "DebugLevel": "2",
-        }
-        base.update(params)
-        plugin.Parameters = base
-        plugin.Devices = domoticz.Devices
-        plugin.onStart()
-        return made
-
-    return start
 
 
 def device_code_body():
@@ -367,7 +311,7 @@ def test_network_failure_retries_the_device_code(run, clock):
     fakes.push(req, fakes.result(req, req.take("device_code"), 0, category="network"))
     plugin.onHeartbeat()
     assert "device_code" not in req.kinds()
-    clock.offset += plugin.RETRY_BACKOFF_FIRST_S
+    clock.offset += signin.RETRY_BACKOFF_FIRST_S
     plugin.onHeartbeat()
     assert "device_code" in req.kinds()
 
@@ -390,7 +334,7 @@ def test_unqueued_oauth_job_is_logged_and_retried(run, domoticz, clock):
     assert any(level == "status" and "device_code" in m for level, m in domoticz._log)
     assert not plugin._s().code_in_flight
     made["req"].accepting = True
-    clock.offset += plugin.RETRY_BACKOFF_FIRST_S
+    clock.offset += signin.RETRY_BACKOFF_FIRST_S
     plugin.onHeartbeat()
     assert "device_code" in made["req"].kinds()
 
@@ -628,6 +572,48 @@ def test_appliance_commands_are_refused_while_control_is_off(run, domoticz):
     assert HA not in log_text(domoticz)
 
 
+def test_a_refusal_is_shown_on_screen_with_its_next_step(run, domoticz):
+    made = run()
+    authorize(made)
+    discover(made)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", 10, "")
+    [(subject, body, priority, sound, extra, subsystem)] = domoticz._notifications
+    assert subject.endswith(": not sent") and HA not in subject
+    assert "turn it on under Setup > Hardware" in body
+    assert (priority, sound, extra, subsystem) == (0, "", "", "browser")
+
+
+def test_on_screen_messages_can_be_turned_off(run, domoticz):
+    made = run(ScreenMessages="off")
+    authorize(made)
+    discover(made)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", 10, "")
+    assert domoticz._notifications == []
+    assert "command_refused" in log_text(domoticz)
+
+
+def test_a_failing_notification_never_stops_the_command_handling(run, domoticz, monkeypatch):
+    def broken(*args):
+        raise TypeError("function takes at most 5 arguments")
+
+    monkeypatch.setattr(domoticz, "SendNotification", broken)
+    made = run()
+    authorize(made)
+    discover(made)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", 10, "")
+    assert "command_refused" in log_text(domoticz)
+    assert "screen_message_failed" in log_text(domoticz)
+
+
+def test_a_domoticz_without_plugin_notifications_still_logs_the_refusal(run, domoticz, monkeypatch):
+    monkeypatch.delattr(domoticz, "SendNotification")
+    made = run()
+    authorize(made)
+    discover(made)
+    plugin.onCommand(HA, planner.UNIT_ACTIONS, "Set Level", 10, "")
+    assert "command_refused" in log_text(domoticz)
+
+
 def test_status_code_selector_commands_are_refused(run, domoticz):
     run(AllowControl="true")
     plugin.onCommand(HA, planner.UNIT_STATUS_CODE, "Set Level", 40, "")
@@ -667,7 +653,7 @@ def test_failed_listing_is_retried(run, clock):
     authorize(made)
     answer(made, "list", 0, category="network")
     assert "list" not in made["req"].kinds()
-    clock.offset += plugin.RETRY_BACKOFF_FIRST_S
+    clock.offset += signin.RETRY_BACKOFF_FIRST_S
     plugin.onHeartbeat()
     assert "list" in made["req"].kinds()
 
@@ -992,7 +978,7 @@ def test_listing_retries_back_off_and_reset(run, clock):
     answer(made, "list", body=listing())
     plugin.onCommand(planner.ACCOUNT_DEVICE, planner.ACCOUNT_ACTIONS, "Set Level", 20, "")
     answer(made, "list", 0, category="network")
-    clock.offset += plugin.RETRY_BACKOFF_FIRST_S
+    clock.offset += signin.RETRY_BACKOFF_FIRST_S
     plugin.onHeartbeat()
     assert "list" in made["req"].kinds()  # back to the first delay after a success
 
@@ -1069,7 +1055,7 @@ def test_transient_refresh_failure_retries_later(run, clock):
     refresh_answer(made, 503, "unknown")
     assert plugin._s().auth_state == "AUTHORIZED"
     assert "refresh" not in made["req"].kinds()
-    clock.offset += plugin.RETRY_LATER_S
+    clock.offset += signin.RETRY_LATER_S
     plugin.onHeartbeat()
     assert "refresh" in made["req"].kinds()
 
@@ -1086,7 +1072,7 @@ def test_transient_refresh_failures_back_off_and_reset_on_success(run, clock):
         plugin.onHeartbeat()
         delays.append(round(plugin._s().refresh_next - clock()))
         clock.offset += delays[-1]
-    first, cap = plugin.RETRY_LATER_S, plugin.RETRY_BACKOFF_MAX_S
+    first, cap = signin.RETRY_LATER_S, signin.RETRY_BACKOFF_MAX_S
     assert delays == [first, 2 * first, 4 * first, 8 * first, cap, cap, cap]
     plugin.onHeartbeat()
     fakes.push(req, fakes.result(req, req.take("refresh"), 200, token_body(ACCESS2)))
@@ -1293,7 +1279,7 @@ def test_token_answers_without_an_oauth_error_are_transient(run, clock, status, 
     authorize(made)
     refresh_reply(made, status, body)
     assert plugin._s().auth_state == "AUTHORIZED"
-    clock.offset += plugin.RETRY_LATER_S
+    clock.offset += signin.RETRY_LATER_S
     plugin.onHeartbeat()
     assert "refresh" in made["req"].kinds()
 
@@ -1313,7 +1299,9 @@ def test_stream_401_for_a_replaced_token_keeps_authorization(run):
     authorize(made)
     discover(made)  # the stream opens with ACCESS
     req, stream = made["req"], made["stream"]
-    plugin._request_refresh()  # a REST 401 refreshes while that open is in flight
+    signin.request_refresh(
+        plugin._s(), plugin._hooks()
+    )  # a REST 401 refreshes while that open is in flight
     fakes.push(req, fakes.result(req, req.take("refresh"), 200, token_body(ACCESS2)))
     plugin.onHeartbeat()
     fakes.push(stream, workers.NeedsRefresh(stream.generation, current=False))
@@ -1706,6 +1694,8 @@ def test_a_failed_temperature_change_blocks_the_start_behind_it(run, domoticz, c
     assert "command" not in made["req"].kinds()
     assert "Start not sent" in log_text(domoticz)
     assert "Value not allowed" in log_text(domoticz)
+    subjects = [n[0] for n in domoticz._notifications]
+    assert any(s.endswith("failed") for s in subjects), subjects
 
 
 def test_stop_cancels_a_start_that_was_not_sent(run, domoticz, clock):
@@ -1872,7 +1862,9 @@ def test_a_write_that_cannot_be_queued_is_refused(run, domoticz):
 def test_lost_authorization_cancels_queued_writes(run, domoticz):
     made = control_ready(run)
     plugin.onCommand(HA, setpoint_unit(), "Set Level", 200.0, "")
-    plugin._lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_grant")
+    signin.lose_authorization(
+        plugin._s(), plugin._hooks(), auth.AuthState.NEEDS_REAUTH, "invalid_grant"
+    )
     assert "command_cancelled" in log_text(domoticz)
     assert "command" not in made["req"].kinds()
 
@@ -2100,7 +2092,9 @@ def test_a_check_hit_by_a_401_after_authorization_was_lost_still_settles(run, do
     plugin.onHeartbeat()
     req = made["req"]
     check = req.take("verify")
-    plugin._lose_authorization(auth.AuthState.NEEDS_REAUTH, "invalid_grant")
+    signin.lose_authorization(
+        plugin._s(), plugin._hooks(), auth.AuthState.NEEDS_REAUTH, "invalid_grant"
+    )
     fakes.push(req, fakes.result(req, check, 401, b"", "auth", "invalid_token"))
     plugin.onHeartbeat()
     assert "command_unconfirmed" in log_text(domoticz)
@@ -2197,7 +2191,7 @@ def test_a_write_held_for_a_refresh_is_reported_not_sent_when_a_new_grant_replac
 ):
     made = control_ready(run)
     held_for_refresh(made)
-    plugin._grant(live_tokens())
+    signin.grant(plugin._s(), plugin._hooks(), live_tokens())
     [line] = failed_lines(domoticz)
     assert "give the command again" in line
     assert not plugin._s().coord.busy()
@@ -2287,12 +2281,12 @@ def test_existing_account_selector_gets_the_new_level_names(run, domoticz):
     plugin.onHeartbeat()
     levels = unit.stored["Options"]["LevelNames"]
     assert levels == "-|Sign in again|Refresh appliances"
-    assert plugin.REAUTHORIZE_LEVEL == 10 and plugin.REFRESH_LEVEL == 20  # numbers never move
+    assert signin.REAUTHORIZE_LEVEL == 10 and signin.REFRESH_LEVEL == 20  # numbers never move
 
 
 def test_refresh_while_signed_out_names_what_was_refused(run, domoticz):
     run()
-    plugin._account_action(plugin.REFRESH_LEVEL)
+    signin.account_action(plugin._s(), plugin._hooks(), signin.REFRESH_LEVEL)
     assert 'refresh_appliances_refused detail="not signed in"' in status_lines(domoticz)
 
 

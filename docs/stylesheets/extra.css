@@ -1,0 +1,25 @@
+/* WCAG 2.1 AA colour overrides for the blue theme.
+ * Text-on-background pairs meet the 4.5:1 normal-text ratio: header white on #1565c0 is
+ * 5.75:1, light links #0d47a1 on white 8.63:1, dark links #90caf9 on slate 9.2:1. */
+
+/* Light scheme */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1565c0;
+  --md-primary-fg-color--light: #42a5f5;
+  --md-primary-fg-color--dark: #0d47a1;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: hsla(0, 0%, 100%, 0.7);
+  --md-accent-fg-color: #0d47a1;
+  --md-typeset-a-color: #0d47a1;
+}
+
+/* Dark (slate) scheme */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1565c0;
+  --md-primary-fg-color--light: #42a5f5;
+  --md-primary-fg-color--dark: #0d47a1;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: hsla(0, 0%, 100%, 0.7);
+  --md-accent-fg-color: #90caf9;
+  --md-typeset-a-color: #90caf9;
+}

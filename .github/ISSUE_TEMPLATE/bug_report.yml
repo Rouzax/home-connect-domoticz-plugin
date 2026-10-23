@@ -1,0 +1,109 @@
+name: Bug report
+description: Something the plugin does is wrong, or it stopped working.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting.
+
+        **Before you fill this in**, the
+        [troubleshooting page](https://rouzax.github.io/home-connect-domoticz-plugin/faq/) is
+        organised by what you see, and lists every message a refused command can show with its
+        fix.
+
+        **Never paste your Client ID, Client Secret, a sign-in link or code, or device IDs
+        (they contain your appliances' Home Connect IDs) into this form.** The plugin's log does
+        not contain tokens or appliance IDs, but other things you copy might.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        The dishwasher's Remaining time stays at 0 while the program runs; the Home Connect app
+        shows 1:20.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The steps that lead to it, and whether it happens every time.
+      placeholder: |
+        1. Start any program on the dishwasher
+        2. Wait a few minutes
+        3. Remaining time stays at 0
+        Happens on every program.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Domoticz log
+      description: >-
+        Set Debug level to Basic (or Verbose for a wrong or missing value), reproduce, then paste
+        the lines that start with the name of your Home Connect hardware. Remove appliance names
+        you do not want public. This is formatted as code automatically.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: appliance
+    attributes:
+      label: Appliance brand and type
+      description: For example "Siemens dishwasher" or "Bosch oven with microwave". No model or serial numbers needed.
+    validations:
+      required: true
+
+  - type: input
+    id: domoticz-version
+    attributes:
+      label: Domoticz version
+      description: From Setup, then About. For example "2026.4 (build 18300)".
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in the log line "Initialized version X, author 'Rouzax'".
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How is the plugin installed?
+      options:
+        - dist branch (git clone -b dist)
+        - Release zip
+        - Full source clone
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: control-enabled
+    attributes:
+      label: Is Allow control on?
+      options:
+        - "No (default, read-only)"
+        - "Yes"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I removed Client ID, Client Secret, sign-in codes and device IDs from everything I pasted above.
+          required: true
+        - label: I checked the troubleshooting page and this is not one of the documented cases.
+          required: true

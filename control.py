@@ -49,10 +49,15 @@ _VERIFY_PATHS = {
 # (English, Dutch). Short: each lands in one log line.
 _TEXT = {
     "control_off": (
-        "'Allow control' is off in the hardware settings",
-        "'Allow control' staat uit in de hardware-instellingen",
+        "'Allow control' is off in the hardware settings; turn it on under Setup > Hardware to"
+        " operate appliances",
+        "'Allow control' staat uit in de hardware-instellingen; zet het aan onder Instellingen >"
+        " Hardware om apparaten te bedienen",
     ),
-    "read_only": ("This device only shows a value", "Dit apparaat toont alleen een waarde"),
+    "read_only": (
+        "This device only shows a value; it cannot be changed from Domoticz",
+        "Dit apparaat toont alleen een waarde; het kan niet vanuit Domoticz worden gewijzigd",
+    ),
     "unmapped": (
         "Selector levels unknown; restore a backup or delete the device",
         "Selectorniveaus onbekend; zet een back-up terug of verwijder het apparaat",
@@ -62,8 +67,8 @@ _TEXT = {
         "Apparaat nog niet gevonden; probeer het zo opnieuw",
     ),
     "stopping": (
-        "Plugin stopping; command not sent",
-        "Plugin stopt; opdracht niet verstuurd",
+        "Plugin stopping; command not sent; give it again once the plugin has started",
+        "Plugin stopt; opdracht niet verstuurd; geef hem opnieuw zodra de plugin weer draait",
     ),
     "not_authorized": (
         "Not signed in to Home Connect; use the sign-in link on the Home Connect device"
@@ -79,20 +84,27 @@ _TEXT = {
         "Command {command} is not supported here",
         "Opdracht {command} wordt hier niet ondersteund",
     ),
-    "level_unavailable": ("That choice is not available", "Die keuze is niet beschikbaar"),
-    "not_a_number": ("Not a number", "Geen getal"),
+    "level_unavailable": (
+        "That choice is not available; choose another",
+        "Die keuze is niet beschikbaar; kies een andere",
+    ),
+    "not_a_number": ("Not a number; enter a number", "Geen getal; vul een getal in"),
     "choose_program": (
         "Choose a program; '-' selects nothing",
         "Kies een programma; '-' kiest niets",
     ),
     "choose_action": ("Choose an action; '-' does nothing", "Kies een actie; '-' doet niets"),
     "program_not_offered": (
-        "{program} is not offered by {a}",
-        "{program} wordt niet aangeboden door {a}",
+        "{program} is not offered by {a}; choose another program",
+        "{program} wordt niet aangeboden door {a}; kies een ander programma",
     ),
     "select_running": (
         "A program is running on {a}; stop it before choosing another",
         "Er loopt een programma op {a}; stop het voordat je een ander kiest",
+    ),
+    "select_off": (
+        "{a} is switched off; switch it on first",
+        "{a} staat uit; zet het eerst aan",
     ),
     "no_program_selected": (
         "No program is selected on {a}; choose one first",
@@ -119,7 +131,10 @@ _TEXT = {
     "range_low": ("at least {low}", "minimaal {low}"),
     "range_high": ("at most {high}", "maximaal {high}"),
     "rounded": ("{item}: {value} rounded to {rounded}", "{item}: {value} afgerond op {rounded}"),
-    "setting_read_only": ("{item} cannot be changed", "{item} kan niet worden gewijzigd"),
+    "setting_read_only": (
+        "{item} cannot be changed from Domoticz",
+        "{item} kan niet vanuit Domoticz worden gewijzigd",
+    ),
     "power_unknown": (
         "The power options of {a} are not known yet; try again later",
         "De aan/uit-mogelijkheden van {a} zijn nog niet bekend; probeer het later",
@@ -149,10 +164,13 @@ _TEXT = {
         "The program running on {a} is not known yet; try again shortly",
         "Het programma dat op {a} loopt is nog niet bekend; probeer het zo opnieuw",
     ),
-    "nothing_to_stop": ("No program is running on {a}", "Er loopt geen programma op {a}"),
+    "nothing_to_stop": (
+        "No program is running on {a}; there is nothing to stop",
+        "Er loopt geen programma op {a}; er is niets te stoppen",
+    ),
     "action_not_offered": (
-        "{action} is not offered by {a}",
-        "{action} wordt niet aangeboden door {a}",
+        "{action} is not offered by {a}; use the appliance itself",
+        "{action} wordt niet aangeboden door {a}; gebruik het apparaat zelf",
     ),
     "wrong_state": (
         "{action} is not possible on {a} now ({state}); it works only while {needed}",
@@ -215,14 +233,18 @@ _TEXT = {
         "Limiet voor {action} bereikt ({limit} per minuut); probeer het over {seconds} s",
     ),
     "limiter_now": (
-        "Start or stop limit reached ({limit} per minute)",
-        "Limiet voor starten of stoppen bereikt ({limit} per minuut)",
+        "Start or stop limit reached ({limit} per minute); try again in a minute",
+        "Limiet voor starten of stoppen bereikt ({limit} per minuut); probeer het over een minuut"
+        " opnieuw",
     ),
     "limiter_wait": (
         "Start or stop limit reached ({limit} per minute); try again in {seconds} s",
         "Limiet voor starten of stoppen bereikt ({limit} per minuut); probeer het over {seconds} s",
     ),
-    "pace": ("Too many requests this minute", "Te veel verzoeken deze minuut"),
+    "pace": (
+        "Too many requests this minute; try again in a minute",
+        "Te veel verzoeken deze minuut; probeer het over een minuut opnieuw",
+    ),
     "pace_wait": (
         "Too many requests this minute; try again in {seconds} s",
         "Te veel verzoeken deze minuut; probeer het over {seconds} s",
@@ -235,19 +257,26 @@ _TEXT = {
         "Sign-in changed before it was sent; give the command again",
         "Aanmelding gewijzigd voordat het werd verstuurd; geef de opdracht opnieuw",
     ),
-    "brake_now": ("Paused after repeated errors", "Gepauzeerd na herhaalde fouten"),
+    "brake_now": (
+        "Paused after repeated errors; try again in a few minutes",
+        "Gepauzeerd na herhaalde fouten; probeer het over enkele minuten opnieuw",
+    ),
     "blocked_now": (
-        "Home Connect asked to slow down",
-        "Home Connect vraagt om rustiger aan te doen",
+        "Home Connect asked to slow down; try again in a minute",
+        "Home Connect vraagt om rustiger aan te doen; probeer het over een minuut opnieuw",
     ),
     "forbidden": (
-        "Not allowed for this Home Connect app",
-        "Niet toegestaan voor deze Home Connect-app",
+        "Not allowed for this Home Connect app; check the application on the developer portal",
+        "Niet toegestaan voor deze Home Connect-app; controleer de applicatie op het developer"
+        " portal",
     ),
-    "refused_key": ("Home Connect refused it ({key})", "Home Connect weigerde het ({key})"),
+    "refused_key": (
+        "Home Connect refused it ({key}); check the appliance and try again",
+        "Home Connect weigerde het ({key}); controleer het apparaat en probeer het opnieuw",
+    ),
     "expired": (
-        "Not sent within {seconds} s; dropped",
-        "Niet binnen {seconds} s verstuurd; vervallen",
+        "Not sent within {seconds} s; dropped; give the command again",
+        "Niet binnen {seconds} s verstuurd; vervallen; geef de opdracht opnieuw",
     ),
     "expired_stop": (
         "Not sent within {seconds} s: the Start before it was not confirmed yet; choose Stop again",
@@ -255,7 +284,10 @@ _TEXT = {
         " Stop",
     ),
     "cancelled": ("Cancelled by Stop", "Geannuleerd door Stop"),
-    "prerequisite": ("Start not sent: {what} failed", "Start niet verstuurd: {what} is mislukt"),
+    "prerequisite": (
+        "Start not sent: {what} failed; fix that first, then choose Start again",
+        "Start niet verstuurd: {what} is mislukt; los dat eerst op en kies dan opnieuw Start",
+    ),
     "unconfirmed": (
         "Not confirmed by {a}; the device shows what {a} reports",
         "Niet bevestigd door {a}; het apparaat toont wat {a} meldt",
@@ -271,6 +303,16 @@ _TEXT = {
     "on": ("On", "Aan"),
     "off": ("Off", "Uit"),
 }
+# On-screen subjects per command event, (English, Dutch); the event's reason is the text.
+_SCREEN = {
+    "command_refused": ("{device}: not sent", "{device}: niet verstuurd"),
+    "command_failed": ("{a}: {command} failed", "{a}: {command} mislukt"),
+    "command_expired": ("{a}: {command} not sent", "{a}: {command} niet verstuurd"),
+    "command_unconfirmed": ("{a}: {command} not confirmed", "{a}: {command} niet bevestigd"),
+    "command_confirmed": ("{a}: {command} done", "{a}: {command} gelukt"),
+}
+# A confirmation carries no reason, so it gets this text.
+_CONFIRMED = ("Confirmed by {a}", "Bevestigd door {a}")
 # Worker refusal reasons (workers.Refused) to message names.
 _REFUSED = {
     "brake": "brake_now",
@@ -687,6 +729,27 @@ def answer_reason(
     return None
 
 
+def shows_on_screen(event: str, choice: str) -> bool:
+    """Whether a command event goes on screen under the On-screen messages choice."""
+    if event not in _SCREEN or choice == "off":
+        return False
+    return choice == "all" or event != "command_confirmed"
+
+
+def screen_message(
+    event: str, device: str, label: str, command: str, reason: str, lang: str
+) -> tuple[str, str] | None:
+    """The (subject, text) a command event shows on screen, or None for an event that has none.
+    A refusal names the device it was given on; the others name the appliance and command."""
+    subjects = _SCREEN.get(event)
+    if subjects is None:
+        return None
+    nl = lang == "nl"
+    subject = subjects[nl].format(device=device, a=label, command=command)
+    text = _CONFIRMED[nl].format(a=label) if event == "command_confirmed" else reason
+    return subject, text
+
+
 def refused_reason(reason: str, lang: str, wait_s: float = 0.0) -> str:
     """Why the worker did not send a write (workers.Refused), with the wait when it is known."""
     name = (_REFUSED_WAIT.get(reason) if wait_s > 0 else None) or _REFUSED.get(reason)
@@ -757,6 +820,8 @@ _ACTION_COMMANDS = {
 }
 # Appliance types the docs list each command for (spec 3.2a). The cached /commands list is
 # refreshed daily, not on a state change, so a command missing from it can still be valid now.
+# The door commands are absent: only an oven with a motorised door has them, so only the
+# appliance's own list offers them.
 _COMMAND_TYPES = {
     catalog.PAUSE: frozenset(
         {"Microwave", "Oven", "Washer", "Dryer", "WasherDryer", "CleaningRobot"}
@@ -764,8 +829,6 @@ _COMMAND_TYPES = {
     catalog.RESUME: frozenset(
         {"Microwave", "Oven", "Washer", "Dryer", "WasherDryer", "CleaningRobot", "Dishwasher"}
     ),
-    catalog.OPEN_DOOR: frozenset({"Oven"}),
-    catalog.PARTLY_OPEN_DOOR: frozenset({"Oven"}),
 }
 # Unit kinds a command can write; any other kind shows a runtime or read-only value.
 _WRITABLE_KINDS = frozenset({"switch", "selector", "setpoint"})
@@ -778,6 +841,8 @@ _START_BLOCKERS = (
     (catalog.REMOTE_START, False, "BSH.Common.Error.RemoteStartNotActive"),
     (catalog.LOCAL_CONTROL, True, "BSH.Common.Error.LockedByLocalControl"),
 )
+_DOOR_OPEN = "BSH.Common.EnumType.DoorState.Open"
+_WRONG_DOOR = "SDK.Error.WrongDoorState"
 
 
 @dataclass(frozen=True)
@@ -1130,6 +1195,13 @@ def _select(ctx: Context, app: model.Appliance, command: str, level: object) -> 
         return Refusal(message("program_not_offered", lang, program=name, a=ctx.label))
     if _running(app):
         return Refusal(message("select_running", lang, a=ctx.label))
+    # An appliance that reports itself off answers a selection with a bare 400.BadRequest; one
+    # that does not report its power, or has a power write pending (a scene's Power On before
+    # its program), gets the selection sent.
+    power = app.settings.get(catalog.POWER_STATE)
+    switching = catalog.POWER_STATE in ctx.pending_keys
+    if power is not None and power.value in _POWER_OFF and not switching:
+        return Refusal(message("select_off", lang, a=ctx.label))
     held = _held_back(ctx)
     if held is not None:
         return held
@@ -1217,6 +1289,10 @@ def build_start(
     if state is not None and state != "Ready":
         shown = catalog.state_name(state, lang)
         return Refusal(message(_NOT_READY.get(state, "not_ready"), lang, a=label, state=shown))
+    # After the state: a finished appliance's own fix (open the door, acknowledge) comes first.
+    door = app.status.get(catalog.DOOR_STATE)
+    if door is not None and door.value == _DOOR_OPEN:
+        return Refusal(errors.user_message(_WRONG_DOOR, label, lang) or _WRONG_DOOR)
     if program is None:
         return Refusal(message("no_program_selected", lang, a=label))
     options = start_options(app, program)

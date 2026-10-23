@@ -95,7 +95,10 @@ def test_a_failed_write_blocks_a_start_behind_it_for_a_minute():
     assert (notes[0].event, notes[0].fields["reason"]) == ("command_failed", "Too hot")
     sent, notes = c.dispatch(1.0)
     assert sent == []
-    assert notes[0].fields["reason"] == "Start not sent: option 200 failed"
+    assert (
+        notes[0].fields["reason"]
+        == "Start not sent: option 200 failed; fix that first, then choose Start again"
+    )
     c.submit(start(), 62.0)
     assert [x.intent.action for x in c.dispatch(62.0)[0]] == ["start"]
 
@@ -674,3 +677,56 @@ def test_each_command_outcome_is_logged_at_status_and_progress_at_debug():
         "command_expired": "status",
         "command_unconfirmed": "status",
     }
+
+
+def test_a_failed_write_given_again_and_confirmed_no_longer_holds_back_a_start():
+    c = make()
+    c.submit(write(value=120, verify=""), 0.0)
+    [w], _ = c.dispatch(0.0)
+    _failed(c, w)
+    c.submit(write(value=120, verify=""), 2.0)
+    [again], _ = c.dispatch(2.0)
+    answered(c, again, now=3.0)
+    c.submit(start(), 4.0)
+    sent, notes = c.dispatch(4.0)
+    assert [s.intent.action for s in sent] == ["start"] and notes == []
+
+
+def test_a_confirmed_write_of_another_key_leaves_the_failed_prerequisite_in_force():
+    c = make()
+    c.submit(write(value=120, verify=""), 0.0)
+    [w], _ = c.dispatch(0.0)
+    _failed(c, w)
+    c.submit(write("setting", "K.Setting.A", True, coalesce="setting:K.Setting.A"), 2.0)
+    [other], _ = c.dispatch(2.0)
+    answered(c, other, now=3.0)
+    c.submit(start(), 4.0)
+    sent, notes = c.dispatch(4.0)
+    assert (
+        sent == []
+        and notes[0].fields["reason"]
+        == "Start not sent: option 120 failed; fix that first, then choose Start again"
+    )
+
+
+def test_writes_without_a_coalesce_key_never_stand_in_for_each_other():
+    c = make()
+    c.submit(write("setting", "K.Setting.A", True), 0.0)
+    [w], _ = c.dispatch(0.0)
+    _failed(c, w)
+    c.submit(write("setting", "K.Setting.B", True), 2.0)
+    [other], _ = c.dispatch(2.0)
+    answered(c, other, now=3.0)
+    c.submit(start(), 4.0)
+    assert c.dispatch(4.0)[0] == []
+
+
+def test_what_abandon_reports_stays_off_the_screen():
+    c = make()
+    c.submit(write(value=1, verify=""), 0.0)
+    c.submit(write("setting", "K.Setting.A", True, ha=HA2), 0.0)
+    sent, _ = c.dispatch(0.0)
+    c.submit(write(value=2, verify=""), 0.5)
+    notes = c.abandon(1.0, "stopping")
+    assert notes and all(not n.screen for n in notes)
+    assert all(n.screen for n in c.submit(write(value=3), 2.0))
