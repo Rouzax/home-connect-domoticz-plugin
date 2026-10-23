@@ -16,5 +16,5 @@ your own developer account.
 
 ## Version
 
-This documentation describes 0.1.0-beta.2. Changes per version are in the
+This documentation describes the newest release. Changes per version are in the
 [changelog](https://github.com/Rouzax/home-connect-domoticz-plugin/blob/main/CHANGELOG.md).

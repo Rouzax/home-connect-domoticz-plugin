@@ -8,7 +8,7 @@ Domoticz for everything your appliances report: whether the washing machine is r
 the dishwasher still needs, the oven temperature, a rinse aid warning.
 
 !!! note "Beta"
-    This is version 0.1.0-beta.2, a beta. It is used every day on a household of
+    The plugin is in beta. It is used every day on a household of
     real appliances, but expect rough edges. Please report what you run into on
     [GitHub](https://github.com/Rouzax/home-connect-domoticz-plugin/issues).
 
