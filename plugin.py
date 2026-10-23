@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
-<plugin key="homeconnect" name="Home Connect" author="Rouzax" version="0.1.0-beta.1" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
+<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.2" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
         <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
