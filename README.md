@@ -1,5 +1,7 @@
 # Home Connect for Domoticz
 
+![Home Connect for Domoticz: a running washer and dryer as Domoticz devices](https://raw.githubusercontent.com/Rouzax/home-connect-domoticz-plugin/main/docs/assets/hero.png)
+
 Your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud in Domoticz:
 state, program, remaining time, settings, messages and, if you allow it, control.
 

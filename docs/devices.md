@@ -10,7 +10,7 @@ shows, in the device language.
 
 ## The devices every appliance gets
 
-![A washing machine's devices right after a program finished: State, Remote control, the Program finished alert, Progress, Remaining time, Program and two of its meters](assets/washer-cards.png)
+![A washing machine's devices while a program runs: State, Remote control, the Program finished alert, Progress, Remaining time, Program and two of its meters](assets/washer-cards.png)
 
 !!! tip "Which theme is this?"
     The screenshots show the [Machinon](https://domoticz.github.io/Machinon/docs/) theme for
