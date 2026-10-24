@@ -7,8 +7,12 @@ then once a day, and puts an UpdateResult on a queue the plugin reads on its own
 must only be called from there). What to do with a result, and remembering which version was
 already reported, is up to the plugin.
 
-update_check v1
+update_check v2
 """
+
+# Annotations stay strings, so the `X | None` unions also load on Python 3.9, the oldest floor
+# among the plugins that copy this file.
+from __future__ import annotations
 
 import json
 import queue
@@ -116,7 +120,7 @@ class UpdateChecker(threading.Thread):
         repo: str,
         current: str,
         channel: str,
-        results: "queue.Queue[UpdateResult]",
+        results: queue.Queue[UpdateResult],
         *,
         user_agent: str,
         first_delay_s: float = FIRST_DELAY_S,
