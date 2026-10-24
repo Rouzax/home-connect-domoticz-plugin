@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
-<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.4" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
+<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.5" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
         <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
@@ -36,6 +36,15 @@
             <options>
                 <option label="Problems" value="problems" default="true"/>
                 <option label="Problems and confirmations" value="all"/>
+                <option label="Off" value="off"/>
+            </options>
+        </param>
+        <param field="UpdateCheck" label="Update check" width="220px">
+            <description>Once a day the plugin asks GitHub whether a newer version exists, and announces it once through the Domoticz notification systems and in the log. Automatic reports betas while you run a beta and only stable releases while you run a stable one. It sends nothing about you or your appliances; Off stops the check.</description>
+            <options>
+                <option label="Automatic" value="auto" default="true"/>
+                <option label="Stable releases only" value="stable"/>
+                <option label="Including betas" value="beta"/>
                 <option label="Off" value="off"/>
             </options>
         </param>
@@ -84,10 +93,13 @@ if TYPE_CHECKING:
     import signin
     import sse
     import text
+    import update_check
     import workers
 
 MIN_PYTHON = (3, 11)
 HEARTBEAT_S = 5
+# The repository the update check asks GitHub about.
+REPOSITORY = "Rouzax/home-connect-domoticz-plugin"
 # While commands are pending the heartbeat runs every second: an appliance's writes go one at a
 # time and answers are read only on a heartbeat, so a scene of several writes would otherwise
 # approach the 30 s command TTL.
@@ -125,7 +137,7 @@ def _load_modules() -> None:
     """Project modules use 3.11 syntax and APIs, so they are imported only after the version
     check; a top-level import would fail before onStart could explain why."""
     global auth, budget, catalog, config, control, coordinator, domoticz_api, errors, hc_client
-    global model, persistence, planner, scheduler, signin, sse, text, workers
+    global model, persistence, planner, scheduler, signin, sse, text, update_check, workers
     import auth
     import budget
     import catalog
@@ -142,6 +154,7 @@ def _load_modules() -> None:
     import signin
     import sse
     import text
+    import update_check
     import workers
 
 
@@ -158,6 +171,12 @@ def _new_request_worker(client, budget_, results, generation, lang) -> workers.R
 def _new_stream_worker(client, budget_, results, generation, lang) -> workers.StreamWorker:
     return workers.StreamWorker(
         client, budget_, results, generation=generation, accept_language=lang
+    )
+
+
+def _new_update_checker(repo: str, current: str, channel: str, results: queue.Queue):
+    return update_check.UpdateChecker(
+        repo, current, channel, results, user_agent=f"homeconnectex/{current} update-check"
     )
 
 
@@ -243,6 +262,9 @@ class _PluginState:
         self.coord = coordinator.Coordinator(cfg.language, _label)
         self.op_states: dict[str, str] = {}
         self.heartbeat_s = HEARTBEAT_S
+        # Update check: its thread posts here; read on the heartbeat (update_check.py).
+        self.updates: queue.Queue = queue.Queue()
+        self.checker: update_check.UpdateChecker | None = None
 
     def remember(self, *values: str) -> None:
         self.secrets.update(v for v in values if v)
@@ -1077,6 +1099,7 @@ def _start() -> None:
     signin.set_auth(s, state)
     _start_request_worker()
     _start_stream_worker()
+    _start_update_check()
     domoticz_api.heartbeat(HEARTBEAT_S)
     if fell_back:
         # Write now, so unreadable stored text does not linger until something else changes.
@@ -1088,6 +1111,45 @@ def _start() -> None:
     else:
         s.saver.after_token_change()
     _emit("status", "started", account=catalog.sign_in_state(state.value))
+
+
+# -- update check -------------------------------------------------------------------------------
+
+
+def _start_update_check() -> None:
+    s = _s()
+    # Domoticz passes the manifest version; without it there is nothing to compare against.
+    if s.cfg.update_check == "off" or not s.cfg.plugin_version:
+        return
+    s.checker = _new_update_checker(REPOSITORY, s.cfg.plugin_version, s.cfg.update_check, s.updates)
+    s.checker.start()
+
+
+def _announce_updates() -> None:
+    """Announce each newer version once: a log line and one notification through every
+    notification system Domoticz has (an empty subsystem), the browser included."""
+    s = _s()
+    while True:
+        try:
+            result = s.updates.get_nowait()
+        except queue.Empty:
+            return
+        if result.error:
+            _emit("debug", "update_check_failed", error=result.error)
+            continue
+        if result.version is None or result.version == s.state.update_notified:
+            continue
+        current, lang = s.cfg.plugin_version, s.cfg.language
+        _emit("status", "update_available", version=result.version, current=current, url=result.url)
+        send = getattr(Domoticz, "SendNotification", None)
+        if send is not None:
+            subject = catalog.note("update_subject", lang, version=result.version)
+            body = catalog.note("update_body", lang, current=current, url=result.url)
+            try:
+                send(subject, body, 0, "", "", "")
+            except Exception as exc:
+                _emit("debug", "update_notification_failed", error=type(exc).__name__)
+        s.state.update_notified = result.version
 
 
 # -- Domoticz callbacks -------------------------------------------------------------------------
@@ -1126,6 +1188,9 @@ def _stop_workers(s: _PluginState) -> list[str]:
 
 
 def _finish_stop(s: _PluginState) -> None:
+    # Not joined: a daemon thread, and a check in flight may take its full timeout.
+    if s.checker is not None:
+        s.checker.stop()
     alive = _stop_workers(s)
     if alive:
         _emit("error", "worker_still_running", workers=",".join(alive))
@@ -1159,6 +1224,7 @@ def onHeartbeat():
     try:
         s.beat += 1
         _drain()
+        _announce_updates()
         if not s.kicked:
             _kick()
         signin.send_revokes(s, _hooks())

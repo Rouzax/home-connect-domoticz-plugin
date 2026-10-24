@@ -277,6 +277,14 @@ _DESCRIPTIONS = {
 # Plugin notes on the account Text device, (English, Dutch).
 # Each note becomes one bullet on the account card, a small tile: keep them short.
 _NOTES = {
+    "update_subject": (
+        "Home Connect plugin {version} is available",
+        "Home Connect-plugin {version} is beschikbaar",
+    ),
+    "update_body": (
+        "You run {current}. What changed and how to update: {url}",
+        "Je gebruikt {current}. Wat er veranderd is en hoe je bijwerkt: {url}",
+    ),
     "workers_down": (
         "Workers stopped; retrying hourly",
         "Achtergrondprocessen gestopt; elk uur opnieuw",

@@ -55,6 +55,8 @@ class State:
     control_shown: bool = False
     # haId to the held delayed-start clock time, in minutes after midnight (spec 6.3).
     delayed_start: dict[str, int] = field(default_factory=dict)
+    # The newest version the update check announced, so each one is announced once.
+    update_notified: str = ""
 
 
 def dumps(state: State) -> str:
@@ -77,6 +79,10 @@ def _is_minute_of_day(value) -> bool:
 
 def _float_or_zero(value) -> float:
     return float(value) if _is_num(value) else 0.0
+
+
+def _text_or_empty(value) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def _str_list(node) -> list[str] | None:
@@ -207,6 +213,7 @@ def loads(text: str) -> tuple[State, bool]:
         account_shown=raw.get("account_shown") is not False,
         control_shown=raw.get("control_shown") is True,
         delayed_start=_typed_map(raw.get("delayed_start"), _is_minute_of_day),
+        update_notified=_text_or_empty(raw.get("update_notified")),
     )
     _raise_next_unit(state)
     return state, False
