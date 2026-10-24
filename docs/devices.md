@@ -57,6 +57,11 @@ a level that never changes, so a script can rely on it:
 | 90 | Error |
 | 100 | Offline |
 
+The level follows the state Home Connect reports, which can differ from what you see at the
+appliance. A dryer with wrinkle guard (anti-crease) stays at 40 (Running) until the wrinkle guard
+ends and only then goes to 70 (Finished); for "the laundry is dry", use its Drying finished device
+([Troubleshooting](faq.md#the-dryer-stays-running-after-the-laundry-is-dry)).
+
 The device is named with a leading "$", for example "$Washer Status code". Domoticz leaves a
 device whose name starts with "$" off the dashboard, while dzVents and Lua scripts read it and
 trigger on it as usual. To see it on the dashboard, rename it without the "$".

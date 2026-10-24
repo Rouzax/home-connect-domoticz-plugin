@@ -68,7 +68,8 @@ Setup > Devices ([Devices](devices.md#options-settings-and-other-values)).
 
 With wrinkle guard (anti-crease) set, the dryer keeps turning the drum now and then after drying,
 for the time you set. Home Connect reports that as Running until the wrinkle guard ends, so State
-shows Running, Progress 100% and Remaining time 1 min all that time.
+shows Running, Progress 100% and Remaining time 1 min all that time, and the Status code stays at
+40 (Running).
 
 Two devices tell the moments apart:
 
@@ -77,7 +78,7 @@ Two devices tell the moments apart:
   on this one.
 - **Program finished** (Programma klaar) comes on when the whole program, wrinkle guard included,
   is over, and stays on until the dryer clears the message, for example when you open the door
-  or it switches itself off. State then shows Finished.
+  or it switches itself off. State then shows Finished, and the Status code goes to 70.
 
 ### The washing machine meters are not there yet
 
