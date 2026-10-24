@@ -103,6 +103,10 @@ The check is one request to `api.github.com`. It sends nothing about you, your D
 appliances, and it does not count towards the Home Connect daily limit. When GitHub cannot be
 reached, the plugin tries again the next day.
 
+Each hardware entry checks and reports on its own. If you added the plugin more than once (one
+entry per Home Connect account), each entry reports the same new version: leave the check on for
+one entry and set it to **Off** on the others.
+
 ## Sign out
 
 Turn it on and press **Update** to sign out. The plugin:
