@@ -73,3 +73,13 @@ def test_screen_messages_choice_and_an_unknown_one_warns():
     cfg = config.parse_config(params(ScreenMessages="loud"))
     assert cfg.screen_messages == "problems"
     assert any("on-screen" in w for w in cfg.warnings)
+
+
+def test_update_check_choice_and_the_plugin_version():
+    cfg = config.parse_config(params(Version="0.1.0-beta.4"))
+    assert (cfg.update_check, cfg.plugin_version) == ("auto", "0.1.0-beta.4")
+    for value in ("auto", "stable", "beta", "off"):
+        assert config.parse_config(params(UpdateCheck=value)).update_check == value
+    odd = config.parse_config(params(UpdateCheck="nightly"))
+    assert odd.update_check == "auto"
+    assert any("update check" in w for w in odd.warnings)

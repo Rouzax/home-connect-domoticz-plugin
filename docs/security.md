@@ -12,6 +12,14 @@ What the plugin stores, what that gives access to, and how to limit it.
 - **Treat the Domoticz database and its backups as secrets.** Anyone with a copy can use your
   Home Connect sign-in until you withdraw it.
 
+## What the plugin connects to
+
+- **Home Connect** (`api.home-connect.com`): every request is an outgoing HTTPS connection from
+  the Domoticz machine. Nothing connects in, so no port forwarding is involved.
+- **GitHub** (`api.github.com`), once a day, for the [update check](settings.md#update-check):
+  one request for the list of the plugin's releases. It carries no data about you, your
+  Domoticz or your appliances. Set Update check to Off to stop it.
+
 ## Withdrawing access
 
 - **Sign out** in the hardware settings withdraws the plugin's access at Home Connect and clears

@@ -15,6 +15,7 @@ import planner
 import plugin
 import signin
 import sse
+import update_check
 import workers
 from tests import fakes
 from tests.conftest import CID, SECRET
@@ -2297,3 +2298,48 @@ def test_recreated_account_units_start_hidden_while_signed_in(run, domoticz):
     plugin.onHeartbeat()
     assert account_unit(domoticz).stored["Used"] == 0
     assert account_unit(domoticz, planner.ACCOUNT_ACTIONS).stored["Used"] == 0
+
+
+# -- update check ---------------------------------------------------------------------------------
+
+
+def test_the_update_check_starts_with_the_plugin_version_and_stops_with_the_plugin(run):
+    made = run(Version="0.1.0-beta.4", UpdateCheck="stable")
+    checker = made["checker"]
+    assert checker.started and checker.repo == "Rouzax/home-connect-domoticz-plugin"
+    assert (checker.current, checker.channel) == ("0.1.0-beta.4", "stable")
+    plugin.onStop()
+    assert checker.stopped
+
+
+def test_no_update_check_when_turned_off_or_without_a_version(run):
+    made = run(Version="0.1.0-beta.4", UpdateCheck="off")
+    assert "checker" not in made
+    plugin.onStop()
+    made = run()  # Domoticz always passes Version; without one there is nothing to compare
+    assert "checker" not in made
+
+
+def test_a_newer_version_is_announced_once_through_every_notification_system(run, domoticz):
+    made = run(Version="0.1.0-beta.4")
+    newer = update_check.UpdateResult("0.1.0-beta.5", "https://github.com/x/y/releases/tag/v5")
+    made["checker"].results.put(newer)
+    plugin.onHeartbeat()
+    [(subject, body, priority, sound, extra, subsystem)] = domoticz._notifications
+    assert "0.1.0-beta.5" in subject and "0.1.0-beta.4" in body and newer.url in body
+    # An empty subsystem reaches every notification system Domoticz has, the browser included.
+    assert (priority, sound, extra, subsystem) == (0, "", "", "")
+    assert "update_available" in log_text(domoticz)
+    assert plugin._state.state.update_notified == "0.1.0-beta.5"
+    made["checker"].results.put(newer)
+    plugin.onHeartbeat()
+    assert len(domoticz._notifications) == 1
+
+
+def test_a_failed_or_empty_check_announces_nothing(run, domoticz):
+    made = run(Version="0.1.0-beta.4")
+    made["checker"].results.put(update_check.UpdateResult(None, error="URLError"))
+    made["checker"].results.put(update_check.UpdateResult(None))
+    plugin.onHeartbeat()
+    assert domoticz._notifications == []
+    assert "update_check_failed" in log_text(domoticz)

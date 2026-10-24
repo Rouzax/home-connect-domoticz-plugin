@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.5] - 2026-10-24
+
+### Added
+
+- Update check: once a day the plugin asks GitHub whether a newer version exists and announces
+  each new one once, in the log and through every Domoticz notification system (also shown on
+  screen). A new Update check setting chooses Automatic (betas while you run a beta), Stable
+  releases only, Including betas, or Off.
+
 ## [0.1.0-beta.4] - 2026-10-24
 
 ### Changed

@@ -21,6 +21,8 @@ state, program, remaining time, settings, messages and, if you allow it, control
 | **Alerts** | Appliance messages (program finished, rinse aid nearly empty, preheat finished) as Domoticz alerts. |
 | **Washer meters** | Lifetime energy, water, detergent and softener as Domoticz meters, with use per day, month and year. |
 | **Opt-in control** | Choose a program, change options, start, stop, pause and resume, or start later at a chosen time. Off unless you turn on Allow control. |
+| **On-screen messages** | A refused or failed command says why and what to do next, at the top of the Domoticz screen. |
+| **Update check** | Tells you once, in the log and through your Domoticz notifications, when a newer version is out. Can be turned off. |
 | **English and Nederlands** | Device names and values in either language. |
 
 ## Requirements

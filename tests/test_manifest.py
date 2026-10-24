@@ -24,6 +24,7 @@ def test_settings_and_defaults():
         "AllowControl",
         "DeviceLanguage",
         "ScreenMessages",
+        "UpdateCheck",
         "SignOut",
         "DebugLevel",
     }
@@ -34,6 +35,8 @@ def test_settings_and_defaults():
     options = params["DeviceLanguage"].iter("option")
     defaults = {o.get("value") for o in options if o.get("default") == "true"}
     assert defaults == {"auto"}
+    update = params["UpdateCheck"].iter("option")
+    assert {o.get("value") for o in update if o.get("default") == "true"} == {"auto"}
     screen = params["ScreenMessages"].iter("option")
     assert {o.get("value") for o in screen if o.get("default") == "true"} == {"problems"}
 

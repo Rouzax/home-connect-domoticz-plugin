@@ -26,7 +26,10 @@ the dishwasher still needs, the oven temperature, a rinse aid warning.
   are Domoticz meters, so you see the use per day, month and year.
 - **Operate appliances (optional).** Choose a program, change its options, start, stop, pause
   or resume it, or set it to start later. This is off until you turn on
-  [Allow control](settings.md#allow-control).
+  [Allow control](settings.md#allow-control). When a command cannot go through, a short message
+  on screen says why and what to do next.
+- **Hear about new versions.** The plugin tells you once, in the log and through your Domoticz
+  notifications, when a newer version is out ([Update check](settings.md#update-check)).
 
 ## Where to start
 

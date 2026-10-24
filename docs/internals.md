@@ -38,6 +38,9 @@ What it costs in practice:
 - A **day of normal use** costs a few dozen requests (in testing, about 35 for a day with seven
   program runs); an idle day costs a few per appliance.
 
+The daily [update check](settings.md#update-check) asks GitHub, not Home Connect, so it is not
+counted.
+
 ## When Home Connect says no
 
 - **Too many requests (429):** Home Connect asks the plugin to wait. The plugin stops all

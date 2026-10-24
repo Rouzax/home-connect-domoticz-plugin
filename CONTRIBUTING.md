@@ -41,6 +41,9 @@ Every commit must pass all of these; CI runs the same line:
   module besides `plugin.py` that talks to Domoticz).
 - Every root-level `*.py` ships to users. Development-only Python belongs in `tests/` or
   `tools/`.
+- `update_check.py` is shared with the maintainer's other Domoticz plugins and copied into each
+  unchanged: it stays standard library only, imports nothing from Domoticz or this plugin, and
+  carries its own version line. Change it here and copy it on, rather than editing a copy.
 - `tools/banner/` builds the images: `capture_cards.js` captures device cards from a running
   Domoticz with the Machinon theme, `tile.py` lays them out for the docs, and `hero.py` makes
   `docs/assets/hero.png` and the GitHub social preview. They need Playwright, Pillow and

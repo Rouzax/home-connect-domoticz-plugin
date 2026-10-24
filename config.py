@@ -10,6 +10,8 @@ _ACCEPT_LANGUAGE = {"en": "en-GB", "nl": "nl-NL"}
 _DEBUG_LEVELS = {"0": 0, "1": 1, "2": 2}
 # What a command shows on screen: nothing, refusals and failures, or confirmations too.
 _SCREEN_MESSAGES = frozenset({"off", "problems", "all"})
+# Which releases the update check reports (update_check.CHANNELS).
+_UPDATE_CHECKS = frozenset({"auto", "stable", "beta", "off"})
 # Catches pasted quotes and stray spaces only. The ID is not checked against the Home Connect
 # developer portal, so a well-formed but wrong ID still passes here and fails at sign-in.
 _CLIENT_ID_SHAPE = re.compile(r"^[A-Za-z0-9._~-]{8,128}$")
@@ -26,6 +28,9 @@ class Config:
     sign_out: bool
     debug_level: int
     screen_messages: str
+    update_check: str
+    # The manifest version Domoticz passes as Parameters["Version"]; "" when it passes none.
+    plugin_version: str
     hardware_id: str
     warnings: tuple[str, ...]
 
@@ -62,6 +67,11 @@ def parse_config(params: Mapping[str, str]) -> Config:
         warnings.append(f"unknown on-screen messages choice {screen_messages!r}; using problems")
         screen_messages = "problems"
 
+    update_check = str(params.get("UpdateCheck", "auto")).strip() or "auto"
+    if update_check not in _UPDATE_CHECKS:
+        warnings.append(f"unknown update check choice {update_check!r}; using auto")
+        update_check = "auto"
+
     return Config(
         client_id=client_id,
         client_secret=str(params.get("Password", "")).strip(),
@@ -71,6 +81,8 @@ def parse_config(params: Mapping[str, str]) -> Config:
         sign_out=_flag(params.get("SignOut", "false")),
         debug_level=debug_level,
         screen_messages=screen_messages,
+        update_check=update_check,
+        plugin_version=str(params.get("Version", "")).strip(),
         hardware_id=str(params.get("HardwareID", "")),
         warnings=tuple(warnings),
     )

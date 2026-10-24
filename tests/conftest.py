@@ -65,6 +65,29 @@ def run(domoticz, monkeypatch):
     monkeypatch.setattr(plugin, "_new_stream_worker", stream)
     monkeypatch.setattr(plugin, "_new_client", client)
 
+    class FakeChecker:
+        def __init__(self, repo, current, channel, results):
+            self.repo, self.current, self.channel, self.results = repo, current, channel, results
+            self.started = self.stopped = False
+
+        def start(self):
+            self.started = True
+
+        def stop(self):
+            self.stopped = True
+
+        def join(self, timeout=None):
+            pass
+
+        def is_alive(self):
+            return False
+
+    def checker(repo, current, channel, results):
+        made["checker"] = FakeChecker(repo, current, channel, results)
+        return made["checker"]
+
+    monkeypatch.setattr(plugin, "_new_update_checker", checker)
+
     def start(**params):
         base = {
             "HardwareID": "1",

@@ -14,7 +14,8 @@ You need:
   administrator. The plugin works on older versions and logs a warning at start.
 - **Python 3.11 or newer** on the machine that runs Domoticz. On an older Python the plugin
   stops at start and says why in the log.
-- **Internet access** from the Domoticz machine to `api.home-connect.com`.
+- **Internet access** from the Domoticz machine to `api.home-connect.com`, and to
+  `api.github.com` for the daily [update check](settings.md#update-check) (optional).
 - **"Accept new Hardware Devices" switched on** in Domoticz (Setup > Settings > System). It is
   on by default; while it is off, Domoticz refuses the plugin's devices.
 

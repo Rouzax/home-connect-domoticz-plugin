@@ -29,6 +29,7 @@ def full_state():
         block_until=0.0,
         block_length=0.0,
         account_shown=False,
+        update_notified="0.1.0-beta.5",
     )
 
 
@@ -177,3 +178,8 @@ def test_an_older_snapshot_has_no_control_state():
     loaded, fell_back = persistence.loads(json.dumps(raw))
     assert not fell_back
     assert (loaded.control_shown, loaded.delayed_start) == (False, {})
+
+
+def test_a_reported_version_that_is_not_text_loads_as_none_reported():
+    loaded, _ = persistence.loads(json.dumps({"update_notified": 5}))
+    assert loaded.update_notified == ""

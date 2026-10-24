@@ -11,6 +11,7 @@ to Home Connect within a few seconds and keeps your sign-in and devices.
 | [Allow control](#allow-control) | off | Lets Domoticz operate your appliances. |
 | [Device language](#device-language) | Same as Domoticz | Language of device names and values. |
 | [On-screen messages](#on-screen-messages) | Problems | What a command shows on screen. |
+| [Update check](#update-check) | Automatic | Whether the plugin tells you about a newer version. |
 | [Sign out](#sign-out) | off | Withdraws the plugin's access at Home Connect. |
 | [Debug level](#debug-level) | None | How much the plugin writes to the Domoticz log. |
 
@@ -79,6 +80,28 @@ Good to know:
 - It only goes to the screen: it is not sent by email, Telegram or any other notification
   system you set up in Domoticz.
 - Whatever you choose, the Domoticz log always has the result of every command.
+
+## Update check
+
+A few minutes after it starts, and then once a day, the plugin asks GitHub whether a newer
+version of the plugin exists. When there is one, it tells you once per version:
+
+- a line in the Domoticz log (`update_available`, with the version and a link to its release
+  notes);
+- a notification through every notification system you set up in Domoticz (for example email,
+  Telegram or a push app), which also shows briefly on screen.
+
+The plugin does not update itself: you update as you installed it
+([Installation](install.md#updating)).
+
+- **Automatic** (default): while you run a beta, it reports betas and stable releases; while you
+  run a stable release, only stable releases.
+- **Stable releases only** or **Including betas**: choose for yourself.
+- **Off**: no check at all.
+
+The check is one request to `api.github.com`. It sends nothing about you, your Domoticz or your
+appliances, and it does not count towards the Home Connect daily limit. When GitHub cannot be
+reached, the plugin tries again the next day.
 
 ## Sign out
 
