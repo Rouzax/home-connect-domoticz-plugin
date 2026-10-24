@@ -365,9 +365,8 @@ _METERS = {
 
 # EN/NL names for documented keys. They win over the names Home Connect sends, which are often
 # long or awkward ("Basic dosing volume: detergent"); Home Connect's name is used only for a key
-# not listed here. A key listed here (or in _SPECIAL, _METERS or FIXED_KEYS) is "known": its
-# device is shown on creation unless it is an appliance setting, while a device for any other
-# key is created hidden (spec 6.4).
+# not listed here. A key listed here (or in _SPECIAL, _METERS or FIXED_KEYS) is "known"; whether
+# its device starts used is decided by used_at_creation.
 _NAMES = {
     # Named as the delayed-start unit is ("start_at_name", "ready_at_name"), so a log line names
     # what the card shows.
@@ -588,6 +587,40 @@ def is_compartment_door(key: str) -> bool:
     """Per-compartment fridge door contacts (spec 6.2). Status keys only: the
     Refrigeration.Common.Setting.Door.* keys configure the door assistant, they are not doors."""
     return key.startswith("Refrigeration.") and ".Status.Door." in key
+
+
+# Named values that are diagnostics or repeat another device: created unused, so they stay off the
+# dashboard; a user who wants one adds it.
+_DIAGNOSTIC = frozenset(
+    {
+        "BSH.Common.Status.InteriorIlluminationActive",
+        "BSH.Common.Status.BackendConnected",
+        "BSH.Common.Status.RemoteControlStartAllowedSince",
+        "Cooking.Oven.Status.LastRemoteStartRelease",
+        "Dishcare.Dishwasher.Status.EcoDryActive",
+        "BSH.Common.Option.EstimatedTotalProgramTime",
+        "BSH.Common.Option.EnergyForecast",
+        "BSH.Common.Option.WaterForecast",
+        "BSH.Common.Option.SmartEnergyService.SmartStartEnabled",
+        "Dishcare.Dishwasher.Option.SilenceOnDemand",
+    }
+)
+# Messages nobody notifies on: feedback prompts (".Request") and the dryer's cool-down.
+_QUIET_EVENTS = frozenset({"LaundryCare.Dryer.Event.CoolDownPhaseRunning"})
+
+
+def used_at_creation(key: str, main_setting: bool = False) -> bool:
+    """Whether a value's device starts used (spec 6.4). dzVents and Lua load only used devices,
+    so a device a notification or script hangs on must start used, and one that only clutters
+    the dashboard must not. Every message is used, named or not, except prompts nobody acts on;
+    a setting only when it is the appliance's main control (`main_setting`); anything else when
+    it is named and not a diagnostic. Domoticz applies Used at creation only, so a user's own
+    choice is kept."""
+    if ".Event." in key:
+        return not (key.endswith(".Request") or key in _QUIET_EVENTS)
+    if ".Setting." in key:
+        return main_setting
+    return known(key) and key not in _DIAGNOSTIC
 
 
 def known(key: str) -> bool:
