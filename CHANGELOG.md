@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.4] - 2026-10-24
+
+### Changed
+
+- Which new devices start shown is decided by what they are for, not by whether the plugin has a
+  name for them. Every appliance message is shown (also unnamed ones such as a dryer's water tank
+  or a washer's drum cleaning reminder), so notifications and scripts can use it; feedback
+  prompts and the dryer's cool-down stay hidden. Diagnostics and values that repeat another
+  device (interior light, remote start times, estimated program time, the dishwasher's eco dry,
+  smart start, silence on demand and energy and water forecasts) are now created hidden. Only
+  new devices follow this; devices that already exist keep their setting.
+
 ## [0.1.0-beta.3] - 2026-10-23
 
 ### Changed

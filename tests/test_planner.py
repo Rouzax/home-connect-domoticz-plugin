@@ -290,12 +290,21 @@ def test_cavity_temperature_is_rounded_with_deadband():
     assert (temp.type_name, temp.svalue, temp.deadband) == ("Temperature", "23", 0.5)
 
 
-def test_unknown_keys_are_created_hidden_and_known_keys_shown():
+def test_unknown_values_are_created_unused_and_every_message_used():
+    # Scripts load only used devices, and a message is what a notification hangs on, so every
+    # event is used whether the catalog names it or not; feedback prompts and the dryer's
+    # cool-down are the exception.
     app = app_with(**{"X.Y.Status.Thing": 3, "Cooking.Oven.Status.CurrentCavityTemperature": 21.0})
     app.status["X.Y.Status.Named"] = model.Value("on")
     app.names["X.Y.Status.Named"] = "Named by Home Connect"
-    app.events["BSH.Common.Event.ProgramFinished"] = model.EventState(model.PRESENT, "hint", "")
-    app.events["X.Y.Event.Odd"] = model.EventState(model.PRESENT, "hint", "")
+    present = model.EventState(model.PRESENT, "hint", "")
+    for key in (
+        "BSH.Common.Event.ProgramFinished",
+        "X.Y.Event.Odd",
+        "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDry.Request",
+        "LaundryCare.Dryer.Event.CoolDownPhaseRunning",
+    ):
+        app.events[key] = present
     _, units = plan(app)
     used = {u.options["HCKey"]: u.used for n, u in units.items() if n >= 20}
     assert used == {
@@ -303,7 +312,9 @@ def test_unknown_keys_are_created_hidden_and_known_keys_shown():
         "X.Y.Status.Named": 0,
         "Cooking.Oven.Status.CurrentCavityTemperature": 1,
         "BSH.Common.Event.ProgramFinished": 1,
-        "X.Y.Event.Odd": 0,
+        "X.Y.Event.Odd": 1,
+        "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDry.Request": 0,
+        "LaundryCare.Dryer.Event.CoolDownPhaseRunning": 0,
     }
     assert all(u.used == 1 for n, u in units.items() if n < 20)
 
@@ -1733,8 +1744,8 @@ def test_duration_and_calls_are_shown_in_the_device_language():
 def test_new_setting_devices_are_created_hidden_and_the_rest_shown():
     _, units, _ = described("en")
     keys = by_key(units)
-    assert (keys[CHILD_LOCK].used, keys[SABBATH].used) == (0, 0)
-    for key in (SPIN, FORECAST, CAVITY, SALT, FAVOURITE):
+    assert (keys[CHILD_LOCK].used, keys[SABBATH].used, keys[FORECAST].used) == (0, 0, 0)
+    for key in (SPIN, CAVITY, SALT, FAVOURITE):
         assert keys[key].used == 1, key
     shown = [n for n in units if n < 20 and n != planner.UNIT_STATUS_CODE]
     assert all(units[n].used == 1 for n in shown)
@@ -1951,3 +1962,28 @@ def test_existing_value_device_keeps_its_kind():
     state.unit_kinds[WASHER_HA] = {"40": "custom"}
     unit = unit_for(plan_washer(app, state), ENERGY_TOTAL)
     assert (unit.unit, unit.type_name, unit.type_code, unit.svalue) == (40, "Custom", None, "6293")
+
+
+def test_diagnostics_and_duplicates_are_created_unused_even_when_named():
+    app = app_with()
+    diagnostics = {
+        "BSH.Common.Status.InteriorIlluminationActive": model.Value(False),
+        "Cooking.Oven.Status.LastRemoteStartRelease": model.Value("2026-10-23T16:54:48"),
+        "Dishcare.Dishwasher.Status.EcoDryActive": model.Value(False),
+    }
+    options = {
+        "BSH.Common.Option.EstimatedTotalProgramTime": model.Value(3600, "seconds"),
+        "BSH.Common.Option.EnergyForecast": model.Value(61, "%"),
+        "BSH.Common.Option.WaterForecast": model.Value(49, "%"),
+        "BSH.Common.Option.SmartEnergyService.SmartStartEnabled": model.Value(False),
+        "Dishcare.Dishwasher.Option.SilenceOnDemand": model.Value(False),
+    }
+    app.status.update(diagnostics)
+    _, units = plan(app)
+    used = {u.options["HCKey"]: u.used for n, u in units.items() if n >= 20}
+    assert used == dict.fromkeys(diagnostics, 0)
+    # Options get a device only under a program; the planner path is covered by the forecast in
+    # test_new_setting_devices_are_created_hidden_and_the_rest_shown.
+    for key in [*diagnostics, *options]:
+        assert catalog.known(key), key  # unused by choice, not for want of a name
+        assert not catalog.used_at_creation(key), key

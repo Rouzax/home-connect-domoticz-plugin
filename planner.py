@@ -618,11 +618,9 @@ def _main_setting(key: str) -> bool:
 
 def _dynamic(update: DeviceUpdate, key: str, kind: str) -> DeviceUpdate:
     """Every dynamic unit carries its Home Connect key and kind in its own Options, so a lost
-    snapshot is rebuilt from the devices themselves, never guessed from names (spec 4.4). A key
-    the catalog does not know is created hidden (spec 6.4), and so is every appliance setting
-    (child lock, sabbath mode): rarely looked at, they would bury the state and program cards.
-    Used only applies at creation, so a device the user shows stays shown."""
-    shown = catalog.known(key) and (".Setting." not in key or _main_setting(key))
+    snapshot is rebuilt from the devices themselves, never guessed from names (spec 4.4). Whether
+    it starts used is catalog.used_at_creation."""
+    shown = catalog.used_at_creation(key, _main_setting(key))
     return replace(
         update, options={**update.options, "HCKey": key, "HCKind": kind}, used=1 if shown else 0
     )

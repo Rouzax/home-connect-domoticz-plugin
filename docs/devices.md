@@ -82,13 +82,23 @@ Besides the devices above, the plugin creates a device for each value an applian
 - **Appliance settings** such as child lock or a fridge temperature. These are created hidden,
   except a fridge's or freezer's temperature setpoints and super modes, which are how you
   operate those appliances.
-- **Status values** such as the oven cavity temperature or an energy forecast.
+- **Status values** such as the oven cavity temperature or the dishwasher's program phase.
 - **Messages** (events) such as "Program finished", "Rinse aid nearly empty" or "Preheat
   finished", each as an alert device that lights up while the message is active and clears when
-  it ends.
+  it ends. Every message is shown, also one the plugin has no name for, because a message is
+  what you put a notification on. Only feedback prompts ("Rate your last drying cycle") and the
+  dryer's cool-down are created hidden.
 
-Values the plugin has no name for (Home Connect adds new ones over time) get the name Home
-Connect sends, and their devices are created hidden.
+Also created hidden:
+
+- Values the plugin has no name for (Home Connect adds new ones over time). They get the name
+  Home Connect sends.
+- Diagnostics and values that repeat another device: interior light, the remote start times,
+  the connection to the Home Connect server, the estimated program time, and the dishwasher's
+  eco dry, smart start, silence on demand and energy and water forecasts.
+
+Hidden or shown is decided once, when a device is created. Showing or hiding one yourself is
+never undone by the plugin.
 
 **Where are the hidden devices?** Under **Setup > Devices**. Filter on the hardware, and use the
 green arrow on a device to add it to the dashboard. Scripts (dzVents, Lua) only reliably see a

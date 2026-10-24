@@ -61,8 +61,9 @@ app sees it again, the plugin does too.
 
 ### A device I expected is missing
 
-Devices for settings and for values the plugin has no name for are created hidden. Look under
-Setup > Devices ([Devices](devices.md#options-settings-and-other-values)).
+Settings, values the plugin has no name for, and diagnostics such as the interior light are
+created hidden. Look under Setup > Devices
+([Devices](devices.md#options-settings-and-other-values)).
 
 ### The dryer stays Running after the laundry is dry
 
