@@ -28,6 +28,13 @@ REFUSED_RETRY_S = 60.0
 REAUTHORIZE_LEVEL = 10
 REFRESH_LEVEL = 20
 _MESSAGE_MAX = 150
+# Start refusals that only a change of Client ID (or secret) fixes: (note, log hint). In OAuth,
+# unauthorized_client means the client may not use this grant type: here an application that was
+# not registered as Device Flow, such as one made for another Home Connect integration.
+_START_REJECTED = {
+    "unauthorized_client": ("client_not_device_flow", "client_not_device_flow"),
+    "invalid_client": ("client_rejected", "check_client_id"),
+}
 
 
 @dataclass(frozen=True)
@@ -180,8 +187,19 @@ def handle_device_code(s: Any, hooks: Hooks, r: workers.Result) -> None:
             return
         err = errors.parse_oauth_error(r.status, r.body) if r.status >= 400 else None
         reason = err.code if err else "unexpected_answer"
-        hooks.emit("error", "authorization_start_failed", status=r.status, reason=reason)
-        end_flow(s, hooks, _note(s, "start_failed", reason=text.clean_label(reason, _MESSAGE_MAX)))
+        rejected = _START_REJECTED.get(reason)
+        if rejected is None:
+            hooks.emit("error", "authorization_start_failed", status=r.status, reason=reason)
+            note = _note(s, "start_failed", reason=text.clean_label(reason, _MESSAGE_MAX))
+            end_flow(s, hooks, note)
+            return
+        note_name, hint = rejected
+        hooks.emit("error", "authorization_start_failed", status=r.status, reason=reason, hint=hint)
+        end_flow(s, hooks, _note(s, note_name))
+        # A new code cannot help: the hardware settings must change first, so the card asks for
+        # that instead of saying the code expired.
+        if s.auth_state == auth.AuthState.EXPIRED_CODE:
+            set_auth(s, auth.AuthState.NEEDS_USER_ACTION)
         return
     s.remember(code.device_code)
     s.flow = code

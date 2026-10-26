@@ -1000,10 +1000,43 @@ def test_device_code_retries_back_off(run, clock):
 def test_failed_device_code_start_expires_with_reason(run, domoticz):
     made = run()
     plugin.onHeartbeat()
-    answer(made, "device_code", 400, oauth_error("invalid_client"), "oauth", "invalid_client")
+    answer(made, "device_code", 400, oauth_error("invalid_request"), "oauth", "invalid_request")
     assert plugin._s().auth_state == "EXPIRED_CODE"
-    assert "invalid_client" in account_unit(domoticz).sValue
+    assert "Start failed: invalid_request" in account_unit(domoticz).sValue
     assert any(level == "error" and "authorization_start_failed" in m for level, m in domoticz._log)
+    assert "hint=" not in log_text(domoticz)
+
+
+@pytest.mark.parametrize(
+    ("code", "shown", "hint"),
+    [
+        ("unauthorized_client", "Client ID is not a Device Flow app", "client_not_device_flow"),
+        ("invalid_client", "Client ID or Secret refused", "check_client_id"),
+    ],
+)
+def test_a_refused_client_at_start_asks_to_change_the_settings(run, domoticz, code, shown, hint):
+    made = run()
+    plugin.onHeartbeat()
+    answer(made, "device_code", 400, oauth_error(code), "oauth", code)
+    assert plugin._s().auth_state == "NEEDS_USER_ACTION"
+    card = account_unit(domoticz).sValue
+    assert card.startswith(f"Action needed: {shown}") and "Code expired" not in card
+    line = next(m for level, m in domoticz._log if "authorization_start_failed" in m)
+    assert f"reason={code}" in line.replace('"', "") and f"hint={hint}" in line.replace('"', "")
+    assert "SECRET DESCRIPTION" not in log_text(domoticz)
+
+
+def test_a_refused_client_on_sign_in_again_keeps_the_sign_in(run, domoticz):
+    made = run()
+    authorize(made)
+    req = made["req"]
+    plugin.onCommand(planner.ACCOUNT_DEVICE, planner.ACCOUNT_ACTIONS, "Set Level", 10, "")
+    body = oauth_error("unauthorized_client")
+    fakes.push(req, fakes.result(req, req.take("device_code"), 400, body, "oauth", "x"))
+    plugin.onHeartbeat()
+    s = plugin._s()
+    assert s.auth_state == "AUTHORIZED" and s.tokens.access_token == ACCESS
+    assert "Device Flow" in account_unit(domoticz).sValue
 
 
 def test_poll_error_names_the_code_on_the_account_device(run, domoticz):

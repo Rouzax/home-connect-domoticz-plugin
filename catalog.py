@@ -304,6 +304,10 @@ _NOTES = {
         "Client ID or Secret refused; check settings",
         "Client ID of Secret geweigerd; controleer instellingen",
     ),
+    "client_not_device_flow": (
+        "Client ID is not a Device Flow app; register one at developer.home-connect.com",
+        "Client ID is geen Device Flow-app; registreer er een op developer.home-connect.com",
+    ),
     "refresh_refused": ("Renewal refused ({reason})", "Verlenging geweigerd ({reason})"),
     "start_failed": (
         "Start failed: {reason}; check the Client ID",

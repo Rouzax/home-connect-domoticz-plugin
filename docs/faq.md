@@ -14,6 +14,26 @@ Fix: register the application with a developer account that uses the email of yo
 Connect app account ([Installation, step 1](install.md#1-register-an-application-at-home-connect)),
 put its Client ID in the hardware settings and press Update.
 
+### The Home Connect device says "Client ID is not a Device Flow app"
+
+The log shows `authorization_start_failed status=400 reason="unauthorized_client"
+hint="client_not_device_flow"`. Home Connect refused to start the sign-in because the application
+behind your Client ID was not registered with OAuth Flow **Device Flow**. This happens when you
+reuse the application you made for another Home Connect plugin or integration.
+
+Fix: register a separate application with OAuth Flow Device Flow
+([Installation, step 1](install.md#1-register-an-application-at-home-connect)); the other
+application stays as it is, so whatever uses it keeps working. Put the new Client ID in the
+hardware settings, leave Client Secret empty (or enter the new application's secret, never the
+old one) and press **Update**.
+
+### The Home Connect device says "Client ID or Secret refused"
+
+Home Connect does not know the Client ID, or the Client Secret does not belong to it. The log
+line `authorization_start_failed` then shows `reason="invalid_client"`. Copy the Client ID
+again from your application on [developer.home-connect.com](https://developer.home-connect.com),
+clear Client Secret or paste the matching one, and press **Update**.
+
 ### The sign-in page mentions the terms of use, or the Home Connect device says "Action needed"
 
 Home Connect wants you to accept (new) terms of use before it lets the application in.

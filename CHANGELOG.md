@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.6] - 2026-10-26
+
+### Fixed
+
+- When Home Connect refuses to start the sign-in because of the application itself, the Home
+  Connect device now says what to change instead of "Code expired": "Client ID is not a Device
+  Flow app" for an application registered with another OAuth flow (for example one made for
+  another Home Connect plugin), and "Client ID or Secret refused" for an unknown Client ID or a
+  secret that does not belong to it. The log line `authorization_start_failed` carries a matching
+  `hint`.
+- The update check is now safe to copy into plugins that run on Python 3.9.
+
+### Documentation
+
+- Settings: with more than one hardware entry, keep the update check on for one of them.
+
 ## [0.1.0-beta.5] - 2026-10-24
 
 ### Added
