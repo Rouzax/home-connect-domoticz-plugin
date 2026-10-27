@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
-<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.6" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
+<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.7" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
         <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
@@ -250,6 +250,7 @@ class _PluginState:
         self.warned: set[str] = set()
         self.blocked_selectors: list[tuple[str, int]] = []
         self.api_blocked = False
+        self.api_block_until = 0.0
         self.secrets: set[str] = set()
         self.ha_ids: set[str] = set()
         # Supervision.
@@ -772,8 +773,12 @@ def _watch_block() -> None:
     snapshot = s.budget.snapshot
     remaining = snapshot.block_until_mono - _mono()
     blocked = remaining > 0
-    if blocked != s.api_blocked:
+    # A new 429 can arrive between two heartbeats right after a block ends, so a block is
+    # recognised by its end time as well: otherwise the second block is never logged.
+    renewed = blocked and snapshot.block_until_mono != s.api_block_until
+    if blocked != s.api_blocked or renewed:
         s.api_blocked = blocked
+        s.api_block_until = snapshot.block_until_mono if blocked else 0.0
         if blocked:
             _emit("status", "api_blocked", seconds=int(remaining))
         else:
@@ -1073,9 +1078,8 @@ def _start() -> None:
         # place AllowControl can change.
         for device_id in list(_devices()):
             if device_id != planner.ACCOUNT_DEVICE:
-                domoticz_api.set_used(
-                    _devices(), device_id, planner.CONTROL_ONLY_UNITS, cfg.allow_control
-                )
+                units = planner.CONTROL_ONLY_UNITS + planner.CONTROL_SHOWN_UNITS
+                domoticz_api.set_used(_devices(), device_id, units, cfg.allow_control)
         saved.control_shown = cfg.allow_control
     if auth.issued_to_another_client(saved.tokens, s.id_hash):
         _emit(

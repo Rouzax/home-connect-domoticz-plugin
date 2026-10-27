@@ -32,6 +32,8 @@ DATA_DRIVEN_FIXED_UNITS = (UNIT_PROGRAM_SELECT,)
 # 6.4). The program selector is not one of them: it also tells scripts, as a level that never
 # changes meaning, which program is selected or running.
 CONTROL_ONLY_UNITS = (UNIT_ACTIONS, UNIT_ACK, UNIT_DELAYED_START)
+# Planned whatever AllowControl says (scripts may read them), but only shown while it is on.
+CONTROL_SHOWN_UNITS = (UNIT_REMOTE,)
 # Action levels are a public contract for scenes and scripts, the same on every appliance:
 # never renumber or reuse one. Level 0 is "-", to which the selector always returns, so the
 # same action chosen twice runs twice. The door actions come last: an appliance without them
@@ -955,7 +957,10 @@ def plan_appliance(
     module cannot log (spec 6.2). `blocked` holds the (DeviceID, unit) selectors whose level
     keys could not be recovered (domoticz_api.recover_from_devices)."""
     dev = device_id(app.ha_id)
-    out = _fixed(app, dev, label, lang, now_wall, stream_stale)
+    out = [
+        replace(u, used=int(allow_control)) if u.unit in CONTROL_SHOWN_UNITS else u
+        for u in _fixed(app, dev, label, lang, now_wall, stream_stale)
+    ]
     out += _control(app, state, dev, label, lang, allow_control, blocked)
 
     def allocate(key: str) -> int | None:
@@ -966,7 +971,14 @@ def plan_appliance(
             )
         return unit
 
-    def emit(key: str, wanted: str, value: model.Value | None, detail: dict, present: bool):
+    def emit(
+        key: str,
+        wanted: str,
+        value: model.Value | None,
+        detail: dict,
+        present: bool,
+        create: bool = True,
+    ) -> None:
         if _no_device(key, value):
             return
         unit = allocate(key)
@@ -977,11 +989,24 @@ def plan_appliance(
         update = _value_update(
             state, app, dev, unit, label, key, kind, value, detail, lang, present
         )
-        out.append(_dynamic(update, key, kind))
+        planned = _dynamic(update, key, kind)
+        out.append(planned if create else replace(planned, create=False))
 
+    idle = _phase(app, app.operation_state()) == "idle"
     for key, value in app.status.items():
-        if key not in catalog.FIXED_KEYS:
-            emit(key, _readonly_kind(key, value, {}), value, {}, True)
+        if key in catalog.FIXED_KEYS:
+            continue
+        if idle and key in catalog.RUN_SCOPED:
+            # Derived from a reported OperationState, like the run cards (spec 6.4).
+            value = model.Value(catalog.RUN_SCOPED[key])
+        emit(key, _readonly_kind(key, value, {}), value, {}, True)
+    if idle:
+        # Not reported since a restart (these values are not persisted), but the device may still
+        # show the last run's value: reset a unit that exists, never create one.
+        for key, reset in catalog.RUN_SCOPED.items():
+            if key not in app.status and key in state.unit_alloc.get(dev, {}):
+                value = model.Value(reset)
+                emit(key, _readonly_kind(key, value, {}), value, {}, True, create=False)
     for key, value in app.settings.items():
         if key in catalog.FIXED_KEYS:
             continue
