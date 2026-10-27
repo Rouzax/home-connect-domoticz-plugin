@@ -796,6 +796,19 @@ def test_block_start_and_end_are_logged(run, domoticz, clock):
     assert any(level == "status" and "api_block_ended" in m for level, m in domoticz._log)
 
 
+def test_a_block_that_follows_another_between_heartbeats_is_logged(run, domoticz, clock):
+    made = run()
+    authorize(made)
+    plugin._s().budget.block(120)
+    plugin.onHeartbeat()
+    clock.offset += 125
+    # The next 429, before a heartbeat saw the first block end (the budget keeps real time).
+    plugin._s().budget.block(300)
+    plugin.onHeartbeat()
+    assert log_count(domoticz, "api_blocked") == 2
+    assert log_count(domoticz, "api_block_ended") == 0
+
+
 def test_depaired_appliance_stops_updating(run, domoticz):
     made = run()
     authorize(made)
@@ -1822,10 +1835,11 @@ def test_a_start_is_checked_again_when_it_is_sent(run, domoticz, clock):
 def test_control_units_are_hidden_once_when_control_is_turned_off(run, domoticz):
     control_ready(run)
     actions = domoticz.Devices[HA].Units[planner.UNIT_ACTIONS]
-    assert actions.stored["Used"] == 1
+    remote = domoticz.Devices[HA].Units[planner.UNIT_REMOTE]
+    assert actions.stored["Used"] == remote.stored["Used"] == 1
     plugin.onStop()
     run(AllowControl="false")
-    assert actions.stored["Used"] == 0
+    assert actions.stored["Used"] == remote.stored["Used"] == 0
     assert domoticz.Devices[HA].Units[planner.UNIT_PROGRAM_SELECT].stored["Used"] == 1
     assert saved_state(domoticz).control_shown is False
 

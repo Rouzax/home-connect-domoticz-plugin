@@ -1744,8 +1744,9 @@ def test_duration_and_calls_are_shown_in_the_device_language():
 def test_new_setting_devices_are_created_hidden_and_the_rest_shown():
     _, units, _ = described("en")
     keys = by_key(units)
-    assert (keys[CHILD_LOCK].used, keys[SABBATH].used, keys[FORECAST].used) == (0, 0, 0)
-    for key in (SPIN, CAVITY, SALT, FAVOURITE):
+    hidden = (CHILD_LOCK, SABBATH, FORECAST, SPIN)
+    assert [keys[key].used for key in hidden] == [0] * len(hidden)
+    for key in (CAVITY, SALT, FAVOURITE):
         assert keys[key].used == 1, key
     shown = [n for n in units if n < 20 and n != planner.UNIT_STATUS_CODE]
     assert all(units[n].used == 1 for n in shown)
@@ -1970,8 +1971,11 @@ def test_diagnostics_and_duplicates_are_created_unused_even_when_named():
         "BSH.Common.Status.InteriorIlluminationActive": model.Value(False),
         "Cooking.Oven.Status.LastRemoteStartRelease": model.Value("2026-10-23T16:54:48"),
         "Dishcare.Dishwasher.Status.EcoDryActive": model.Value(False),
+        "LaundryCare.Dryer.Status.ConnectedDry.OperationStatus": model.Value("Available"),
     }
     options = {
+        "LaundryCare.Common.Option.ReferToProgram": model.Value(0),
+        "LaundryCare.Dryer.Option.WrinkleGuard": model.Value("Min120"),
         "BSH.Common.Option.EstimatedTotalProgramTime": model.Value(3600, "seconds"),
         "BSH.Common.Option.EnergyForecast": model.Value(61, "%"),
         "BSH.Common.Option.WaterForecast": model.Value(49, "%"),
@@ -1987,3 +1991,50 @@ def test_diagnostics_and_duplicates_are_created_unused_even_when_named():
     for key in [*diagnostics, *options]:
         assert catalog.known(key), key  # unused by choice, not for want of a name
         assert not catalog.used_at_creation(key), key
+
+
+def test_the_program_phase_is_reset_once_the_run_is_over():
+    phase = "Dishcare.Dishwasher.Status.ProgramPhase"
+    drying = "Dishcare.Dishwasher.EnumType.ProgramPhase.Drying"
+    app = app_with(
+        **{catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.Run", phase: drying}
+    )
+    app.value_names[drying] = "Drying active"
+    app.active_program = "Dishcare.Dishwasher.Program.Auto2"
+    state, units = plan(app)
+    assert by_key(units)[phase].svalue == "Drying active"
+    app.status[catalog.OPERATION_STATE] = model.Value(READY)
+    app.active_program = None
+    for lang, shown in (("en", "Not running"), ("nl", "Niet actief")):
+        assert by_key(plan(app, state, lang=lang)[1])[phase].svalue == shown
+    assert app.status[phase].value == drying  # the model keeps what Home Connect reported
+
+
+def test_only_the_main_options_start_used():
+    for key in (
+        "Cooking.Oven.Option.SetpointTemperature",
+        "BSH.Common.Option.Duration",
+        "LaundryCare.Common.Option.ProcessPhase",
+    ):
+        assert catalog.used_at_creation(key), key
+    assert not catalog.used_at_creation("Dishcare.Dishwasher.Option.HygienePlus")
+
+
+def test_the_remote_control_card_is_shown_only_with_allow_control():
+    app = app_with(**{catalog.REMOTE_START: True})
+    _, off = plan(app)
+    assert off[planner.UNIT_REMOTE].used == 0
+    on = planner.plan_appliance(
+        app, persistence.State(), "en", NOW, False, app.name, allow_control=True
+    )
+    assert by_unit(on)[planner.UNIT_REMOTE].used == 1
+
+
+def test_a_program_phase_left_from_before_a_restart_is_reset_but_never_created():
+    phase = "Dishcare.Dishwasher.Status.ProgramPhase"
+    app = app_with(**{catalog.OPERATION_STATE: READY})
+    state, units = plan(app)
+    assert phase not in by_key(units)
+    state.unit_alloc.setdefault(HA, {})[phase] = 30
+    reset = by_key(plan(app, state)[1])[phase]
+    assert (reset.unit, reset.svalue, reset.create) == (30, "Not running", False)

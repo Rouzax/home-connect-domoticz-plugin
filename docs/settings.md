@@ -39,7 +39,11 @@ Off by default. While it is off, the plugin only reads from Home Connect:
 - every command to an appliance is refused, and the Domoticz log says why ("'Allow control' is
   off in the hardware settings");
 - the Actions, Acknowledge and Start at / Ready at devices are hidden; Program choice stays
-  visible but does not send anything.
+  visible but does not send anything;
+- Remote control is hidden too: it still updates, so scripts can read it once you add it, but
+  it only matters for starting an appliance from Domoticz.
+
+Switching Allow control shows or hides these devices once, at that moment.
 
 Turn it on to choose programs, change options and settings, and start, stop, pause or resume
 appliances from Domoticz, including from scenes, timers and scripts. A script or a misclick can

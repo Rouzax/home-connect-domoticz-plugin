@@ -22,6 +22,9 @@ LIMITED = "limited"
 SERVER = "server"
 UNKNOWN = "unknown"
 
+# An idle appliance's normal answer to a program fetch. It is still an error response, so Home
+# Connect counts it toward its error limit; only the log treats it as an answer.
+NO_PROGRAM_KEYS = frozenset({"SDK.Error.NoProgramSelected", "SDK.Error.NoProgramActive"})
 _STATE_KEYS = {
     "SDK.Error.NoProgramSelected",
     "SDK.Error.NoProgramActive",

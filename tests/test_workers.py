@@ -214,6 +214,68 @@ def test_two_network_errors_give_a_network_result():
     assert len(client.calls) == 2
 
 
+def test_a_timeout_counts_for_the_brake_and_its_retry_waits_longer():
+    b = RecordingBudget()
+    client = FakeClient([hc_client.TransportError("TimeoutError"), resp(200)])
+    w, results = start_request_worker(client, b)
+    waits = []
+    requeue = w._requeue
+    w._requeue = lambda job, wait_s: (waits.append(wait_s), requeue(job, wait_s))
+    w.submit(api_job())
+    items = drain(results, until=lambda o: results_of(o, workers.Result))
+    w.stop()
+    [r] = results_of(items, workers.Result)
+    assert r.status == 200
+    assert waits == [workers.TIMEOUT_RETRY_DELAY_S]
+    assert b.recorded[0] == (True, True, False, False)  # counted, unlike a refused connection
+
+
+def test_an_offline_answer_drops_the_appliance_s_queued_fetches_but_not_commands():
+    offline = json.dumps(
+        {"error": {"key": "SDK.Error.HomeAppliance.Connection.Initialization.Failed"}}
+    ).encode()
+    other = "TEST-OVEN-000000000000"
+    sent = []
+
+    class QueueingClient(FakeClient):
+        def request(self, method, path, **kw):
+            if not self.calls:
+                # Queued while the first fetch waits on the appliance.
+                w.submit(api_job(kind="settings", path=f"/api/homeappliances/{HA_ID}/settings"))
+                w.submit(
+                    api_job(kind="status", path=f"/api/homeappliances/{other}/status", ha_id=other)
+                )
+                w.submit(
+                    api_job(
+                        kind="selected",
+                        path=f"/api/homeappliances/{HA_ID}/x",
+                        priority=scheduler.PRIORITY_COMMAND,
+                    )
+                )
+            sent.append(path)
+            return super().request(method, path, **kw)
+
+    client = QueueingClient([resp(409, offline), resp(200), resp(200)])
+    w, results = start_request_worker(client)
+    w.submit(api_job())
+    items = drain(results, until=lambda o: len(results_of(o, workers.Result)) == 3)
+    w.stop()
+    assert sent[1:] == [f"/api/homeappliances/{HA_ID}/x", f"/api/homeappliances/{other}/status"]
+    dropped = [r for r in results_of(items, workers.LogRecord) if r.event == "jobs_dropped"]
+    assert [d.fields["count"] for d in dropped] == [1]
+
+
+def test_an_idle_appliance_s_no_program_answer_is_logged_as_such():
+    body = json.dumps({"error": {"key": "SDK.Error.NoProgramSelected"}}).encode()
+    client = FakeClient([resp(404, body)])
+    w, results = start_request_worker(client)
+    w.submit(api_job(kind="selected"))
+    items = drain(results, until=lambda o: results_of(o, workers.Result))
+    w.stop()
+    [log] = [r for r in results_of(items, workers.LogRecord) if r.event == "request"]
+    assert log.fields["outcome"] == "no_program"
+
+
 def test_posts_are_never_retried():
     client = FakeClient([resp(503), resp(200)])
     w, results = start_request_worker(client)

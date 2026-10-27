@@ -27,7 +27,7 @@ and a hob can be monitored but not started.
 | **Progress** / Voortgang | Percentage | How far the running program is. |
 | **Remaining time** / Resterende tijd | Number (min) | Minutes until the program ends. For an oven program without a set duration, the time it has been running instead. |
 | **Program** / Programma | Text | The running program and when it will be ready, for example "Cotton, ready at 14:35". "about" means the appliance estimates the time. |
-| **Remote control** / Bediening op afstand | Alert | Whether Domoticz may start the appliance: "Local operation", "Remote control off", "Remote control on" or "Remote start allowed". |
+| **Remote control** / Bediening op afstand | Alert | Whether Domoticz may start the appliance: "Local operation", "Remote control off", "Remote control on" or "Remote start allowed". Shown only while Allow control is on. |
 | **Program choice** / Programmakeuze | Selector | The selected program; with [Allow control](settings.md#allow-control) on, choosing one here selects it on the appliance. |
 | **Actions** / Acties | Selector | Start, Stop, Pause, Resume, and on an oven with a motorised door Open door and Partly open door. An action the appliance does not support is refused. Only with Allow control on. |
 | **Acknowledge** / Bevestigen | Push button | Confirms a message on the appliance. Only with Allow control on, and only where the appliance offers it. |
@@ -78,15 +78,18 @@ Besides the devices above, the plugin creates a device for each value an applian
 - **Program options** such as temperature, spin speed or duration. An option you can change
   is a setpoint, selector or switch; one you cannot change only shows its value. Changing one
   works only with Allow control on. Durations are shown and entered in minutes, even though Home
-  Connect works in seconds.
+  Connect works in seconds. Options are created hidden, except the oven's set temperature, the
+  duration and a washer's or dryer's process phase: the Program device already names the
+  program that runs.
 - **Appliance settings** such as child lock or a fridge temperature. These are created hidden,
   except a fridge's or freezer's temperature setpoints and super modes, which are how you
   operate those appliances.
-- **Status values** such as the oven cavity temperature or the dishwasher's program phase.
+- **Status values** such as the oven cavity temperature or the dishwasher's program phase. The
+  program phase shows "Not running" once the program has ended.
 - **Messages** (events) such as "Program finished", "Rinse aid nearly empty" or "Preheat
   finished", each as an alert device that lights up while the message is active and clears when
   it ends. Every message is shown, also one the plugin has no name for, because a message is
-  what you put a notification on. Only feedback prompts ("Rate your last drying cycle") and the
+  what you put a notification on. Only feedback prompts ("Rate drying: cupboard dry") and the
   dryer's cool-down are created hidden.
 
 Also created hidden:
@@ -94,11 +97,14 @@ Also created hidden:
 - Values the plugin has no name for (Home Connect adds new ones over time). They get the name
   Home Connect sends.
 - Diagnostics and values that repeat another device: interior light, the remote start times,
-  the connection to the Home Connect server, the estimated program time, and the dishwasher's
-  eco dry, smart start, silence on demand and energy and water forecasts.
+  the cloud connection, how the program ended, the dishwasher's eco dry, and the dryer's
+  Connected Dry status and version and refresher water.
+- **Remote control**, while Allow control is off (see
+  [Settings](settings.md#allow-control)).
 
-Hidden or shown is decided once, when a device is created. Showing or hiding one yourself is
-never undone by the plugin.
+Hidden or shown is decided once, when a device is created, so an existing install keeps the
+devices it has as they are. Showing or hiding one yourself is never undone by the plugin; the
+devices that follow Allow control change only when you switch that setting.
 
 **Where are the hidden devices?** Under **Setup > Devices**. Filter on the hardware, and use the
 green arrow on a device to add it to the dashboard. Scripts (dzVents, Lua) only reliably see a

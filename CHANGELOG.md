@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0-beta.7] - 2026-10-27
+
+### Fixed
+
+- An appliance that was still connecting could get the whole account blocked by Home Connect for
+  about 10 minutes: the plugin retried requests that timed out at once and kept sending the
+  other requests queued for that appliance. A timed-out request now counts as an error for the
+  plugin's error brake and is asked again only after 30 seconds, and once Home Connect says an
+  appliance is offline, the other requests queued for it are dropped until it reports back.
+- A second Home Connect block that started right after the first one ended was not logged.
+- The dishwasher's Program phase kept the last phase ("Drying") after the program ended; it now
+  shows "Not running".
+- Clearer names, in English and Dutch: the dryer's two "Rate your last drying cycle" prompts
+  now say which drying target they rate, and the cool-down, Connected Dry version, refresher
+  water, Refresh option, cloud connection, program end and oven heating level have their own
+  names instead of Home Connect's.
+
+### Changed
+
+- Fewer devices on the dashboard for a new appliance. Program options start hidden, except the
+  oven's set temperature, the duration and the laundry process phase. The dryer's Connected Dry
+  status and the washer program a dryer takes over start hidden too. Remote control is shown only
+  while Allow control is on, like the Actions and delayed start devices. Devices that already
+  exist keep their setting; Remote control follows Allow control the next time you switch it.
+- The debug log shows an idle appliance's "no program" answer as `outcome="no_program"` instead
+  of an error.
+
 ## [0.1.0-beta.6] - 2026-10-26
 
 ### Fixed

@@ -462,6 +462,28 @@ _NAMES = {
     "LaundryCare.Dryer.Option.HalfLoad": ("Half load", "Halve lading"),
     "LaundryCare.Dryer.Option.WrinkleGuard": ("Wrinkle guard", "Kreukbescherming"),
     "LaundryCare.Dryer.Event.DryingProcessFinished": ("Drying finished", "Drogen klaar"),
+    "LaundryCare.Dryer.Event.CoolDownPhaseRunning": ("Cooling down", "Afkoelen"),
+    # Home Connect names both "Rate your last drying cycle"; the key says which drying target.
+    "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDry.Request": (
+        "Rate drying: cupboard dry",
+        "Beoordeel drogen: kastdroog",
+    ),
+    "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDryPlus.Request": (
+        "Rate drying: cupboard dry plus",
+        "Beoordeel drogen: kastdroog plus",
+    ),
+    "LaundryCare.Dryer.Status.ConnectedDry.Version": (
+        "Connected Dry version",
+        "Connected Dry-versie",
+    ),
+    "LaundryCare.Dryer.Status.RefresherFillLevel": ("Refresher water", "Water opfrisser"),
+    "LaundryCare.Dryer.Option.Refresher": ("Refresh", "Opfrissen"),
+    "BSH.Common.Status.BackendConnected": ("Cloud connection", "Cloudverbinding"),
+    "BSH.Common.Status.ProgramRunDetail.EndTrigger": (
+        "How the program ended",
+        "Hoe het programma eindigde",
+    ),
+    "Cooking.Oven.Option.Level": ("Heating level", "Verwarmingsniveau"),
     # Programs whose Home Connect name carries a typo ("MIx", "Super Quick 40`").
     "LaundryCare.Dryer.Program.InBasket": ("Wool in drying basket", "Wol in droogkorf"),
     "LaundryCare.Dryer.Program.Mix": ("Mix", "Mix"),
@@ -523,6 +545,13 @@ _NAMES = {
 # Enum values whose Home Connect name is English in every language. They win over that name.
 _VALUE_NAMES = {
     "BSH.Common.EnumType.AmbientLightColor.CustomColor": ("Custom colour", "Eigen kleur"),
+    "Dishcare.Dishwasher.EnumType.ProgramPhase.None": ("Not running", "Niet actief"),
+}
+# Status values that describe the current run, with the value they show outside a run. Home
+# Connect reports the reset value when a program starts but not when it ends, so the last phase
+# would otherwise stay on the card until the next run.
+RUN_SCOPED = {
+    "Dishcare.Dishwasher.Status.ProgramPhase": "Dishcare.Dishwasher.EnumType.ProgramPhase.None",
 }
 # Numbered enum values Home Connect usually sends no name for (most ambient light colours), so
 # the number is what tells them apart. A name Home Connect does send wins ("cold white").
@@ -610,11 +639,19 @@ _DIAGNOSTIC = frozenset(
         "BSH.Common.Status.RemoteControlStartAllowedSince",
         "Cooking.Oven.Status.LastRemoteStartRelease",
         "Dishcare.Dishwasher.Status.EcoDryActive",
-        "BSH.Common.Option.EstimatedTotalProgramTime",
-        "BSH.Common.Option.EnergyForecast",
-        "BSH.Common.Option.WaterForecast",
-        "BSH.Common.Option.SmartEnergyService.SmartStartEnabled",
-        "Dishcare.Dishwasher.Option.SilenceOnDemand",
+        "LaundryCare.Dryer.Status.ConnectedDry.OperationStatus",
+        "LaundryCare.Dryer.Status.ConnectedDry.Version",
+        "LaundryCare.Dryer.Status.RefresherFillLevel",
+        "BSH.Common.Status.ProgramRunDetail.EndTrigger",
+    }
+)
+# Options a dashboard is read for while a program runs. Every other option describes how the
+# program was chosen, which the Program device already sums up, so it starts unused.
+_MAIN_OPTIONS = frozenset(
+    {
+        "Cooking.Oven.Option.SetpointTemperature",
+        "BSH.Common.Option.Duration",
+        "LaundryCare.Common.Option.ProcessPhase",
     }
 )
 # Messages nobody notifies on: feedback prompts (".Request") and the dryer's cool-down.
@@ -625,13 +662,15 @@ def used_at_creation(key: str, main_setting: bool = False) -> bool:
     """Whether a value's device starts used (spec 6.4). dzVents and Lua load only used devices,
     so a device a notification or script hangs on must start used, and one that only clutters
     the dashboard must not. Every message is used, named or not, except prompts nobody acts on;
-    a setting only when it is the appliance's main control (`main_setting`); anything else when
-    it is named and not a diagnostic. Domoticz applies Used at creation only, so a user's own
-    choice is kept."""
+    a setting only when it is the appliance's main control (`main_setting`); an option only when
+    it is one of the main few; anything else when it is named and not a diagnostic. Domoticz
+    applies Used at creation only, so a user's own choice is kept."""
     if ".Event." in key:
         return not (key.endswith(".Request") or key in _QUIET_EVENTS)
     if ".Setting." in key:
         return main_setting
+    if ".Option." in key:
+        return key in _MAIN_OPTIONS
     return known(key) and key not in _DIAGNOSTIC
 
 

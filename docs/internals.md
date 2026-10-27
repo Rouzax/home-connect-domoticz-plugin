@@ -46,10 +46,17 @@ counted.
 - **Too many requests (429):** Home Connect asks the plugin to wait. The plugin stops all
   requests for the time Home Connect names, and remembers it across a restart, so a restart
   does not make it worse.
-- **Repeated errors:** after several errors in a short time, the plugin pauses its requests for
-  a while instead of trying again and again.
-- **An appliance that is offline** answers with an error; the plugin shows it as Offline and
-  waits for the appliance to come back, which the stream reports.
+- **Repeated errors:** Home Connect blocks the account for 10 minutes after a short run of
+  error answers, so after several errors in a short time the plugin pauses its requests for a
+  while instead of trying again and again. A request that gets no answer in time counts as an
+  error too, because Home Connect most likely answered it with one, and it is asked again only
+  after 30 seconds.
+- **An appliance that is offline** (or still connecting) answers with an error; the plugin shows
+  it as Offline, drops the other requests it had queued for that appliance and waits for the
+  appliance to come back, which the stream reports.
+- **No program:** an idle appliance answers a program request with "no program selected" or
+  "no program active". That is a normal answer; the debug log shows it as
+  `outcome="no_program"`.
 
 ## Sign-in
 

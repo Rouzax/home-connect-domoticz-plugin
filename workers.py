@@ -38,8 +38,14 @@ MAX_OPENS_PER_HOUR = 12
 WATCHDOG_S = 70.0
 WATCHDOG_POLL_S = 1.0
 RETRY_DELAY_S = 2.0
+# A request that timed out most likely reached Home Connect, which then waits on an appliance that
+# is slow to answer (for example one that is just connecting). Asking again at once would add a
+# second error for the same appliance, so the retry waits longer.
+TIMEOUT_RETRY_DELAY_S = 30.0
 QUEUE_POLL_S = 0.5
 OAUTH = "oauth"
+# TransportError names for a request that was sent but not answered in time.
+_TIMEOUTS = frozenset({"TimeoutError"})
 # Device-flow answers that mean "not yet", not failure (spec 8.1).
 _POLL_CODES = frozenset({"authorization_pending", "slow_down"})
 
@@ -125,6 +131,12 @@ def _never_coalesced(job: scheduler.Job) -> bool:
     return job.oauth or job.priority == scheduler.PRIORITY_TOKEN or job.budget_class == budget.AUTH
 
 
+def _outcome(status: int, key: str) -> str:
+    if status < 400:
+        return "success"
+    return "no_program" if key in errors.NO_PROGRAM_KEYS else "error"
+
+
 class JobQueue:
     """Bounded, priority-ordered, deduplicating. A plain queue.Queue is FIFO and unbounded in
     effect for this purpose, so ordering and the overflow policy are explicit here (spec 4.3)."""
@@ -199,6 +211,19 @@ class JobQueue:
         with self._cond:
             self._wakes += 1
             self._cond.notify_all()
+
+    def drop_appliance(self, ha_id: str) -> int:
+        """Remove the queued background and refetch work for one appliance; returns how many.
+
+        Commands stay: the user hears about each one. The scheduler plans the dropped fetches
+        again when the appliance reports back (CONNECTED or any event)."""
+        with self._cond:
+            kept = [
+                i for i in self._items if i[3].ha_id != ha_id or i[0] < scheduler.PRIORITY_REFETCH
+            ]
+            dropped = len(self._items) - len(kept)
+            self._items = kept
+            return dropped
 
 
 class StreamBackoff:
@@ -428,9 +453,11 @@ class RequestWorker(_Worker):
                     accept_language=None if job.oauth else self._lang,
                 )
             except hc_client.TransportError as exc:
-                # No HTTP answer: booked in the ledger at acquire, never counted by the brake.
+                # No HTTP answer: booked in the ledger at acquire. A timeout was most likely
+                # answered with an error that never arrived, so the brake counts it; a request
+                # that failed before reaching Home Connect cannot count there.
                 failure = str(exc)
-                counts = errors.counts_for_brake(errors.NETWORK)
+                counts = failure in _TIMEOUTS or errors.counts_for_brake(errors.NETWORK)
                 network = True
             else:
                 resp = answer
@@ -457,12 +484,19 @@ class RequestWorker(_Worker):
                 outcome="retry" if retry else "error",
             )
             if retry:
-                self._requeue(replace(job, retried=True), RETRY_DELAY_S)
+                wait = TIMEOUT_RETRY_DELAY_S if failure in _TIMEOUTS else RETRY_DELAY_S
+                self._requeue(replace(job, retried=True), wait)
             else:
                 self._post(Result(self.generation, job, 0, b"", errors.NETWORK, "", None, 0))
             return
         if resp.status == 429:
             self._budget.block(resp.retry_after() or 60.0)
+        if category == errors.OFFLINE and job.ha_id:
+            # The other fetches queued for this appliance would each be refused the same way, and
+            # Home Connect blocks the account after a short run of errors.
+            dropped = self.jobs.drop_appliance(job.ha_id)
+            if dropped:
+                self._log("debug", "jobs_dropped", kind=job.kind, reason="offline", count=dropped)
         if category == errors.AUTH and token is not None:
             # Every queued job would carry the same rejected token and each 401 feeds the brake,
             # so the rest wait as "no_token" until set_token delivers a refreshed one.
@@ -480,7 +514,7 @@ class RequestWorker(_Worker):
             "request",
             **fields,
             duration_ms=resp.duration_ms,
-            outcome="retry" if retry else ("success" if resp.status < 400 else "error"),
+            outcome="retry" if retry else _outcome(resp.status, key),
         )
         if retry:
             self._requeue(replace(job, retried=True), RETRY_DELAY_S)
