@@ -101,6 +101,9 @@ Two devices tell the moments apart:
   is over, and stays on until the dryer clears the message, for example when you open the door
   or it switches itself off. State then shows Finished, and the Status code goes to 70.
 
+The [script example](scripts.md#notify-when-an-appliance-has-finished) sends "is dry" at Drying
+finished and nothing more when the program ends.
+
 ### The washing machine meters are not there yet
 
 They appear when a program ends: that is when the washer reports its lifetime totals. Detergent

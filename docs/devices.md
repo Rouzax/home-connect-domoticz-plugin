@@ -71,6 +71,9 @@ do not reliably see a device that is not used. Under Setup > Devices, filter on 
 add the Status code device with the green arrow. The plugin gives it the "$" name by itself,
 unless you renamed it.
 
+For a ready-made script that sends a notification when a program has finished, see
+[Script examples](scripts.md#notify-when-an-appliance-has-finished).
+
 ## Options, settings and other values
 
 Besides the devices above, the plugin creates a device for each value an appliance reports:
