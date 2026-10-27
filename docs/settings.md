@@ -95,6 +95,12 @@ version of the plugin exists. When there is one, it tells you once per version:
 - a notification through every notification system you set up in Domoticz (for example email,
   Telegram or a push app), which also shows briefly on screen.
 
+A notification system only receives it when Domoticz uses it for notifications. For email,
+that is a separate checkbox: under **Setup > Settings > Email**, tick **Send Email Notification
+Alerts**; filling in the mail server alone is not enough. Other systems (Telegram, Pushover and
+so on) need **Enabled** ticked under **Setup > Settings > Notifications**. Use **Test** there to
+check that a message arrives.
+
 The plugin does not update itself: you update as you installed it
 ([Installation](install.md#updating)).
 
