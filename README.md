@@ -16,9 +16,9 @@ state, program, remaining time, settings, messages and, if you allow it, control
 | Feature | What it does |
 |---------|--------------|
 | **Every appliance on your account** | Washers, dryers, dishwashers, ovens, microwaves, fridges and more appear on their own, with a device per value they report. |
-| **Live state** | Operation state, door, program, progress, remaining time and the finish time, updated from Home Connect's event stream as they change. |
+| **Live state** | A few cards per appliance (more where you operate it, such as a fridge's setpoints): State carries the whole run (state, program, phase, progress, finish time) in one line, Program the program and its settings. Updated from Home Connect's event stream as they change. |
 | **Status code for scripts** | One selector with fixed levels per state, so scripts never depend on translated text. |
-| **Alerts** | Appliance messages (program finished, rinse aid nearly empty, preheat finished) as Domoticz alerts. |
+| **Notifications** | One card lists the messages that need you (drip tray full, rinse aid nearly empty), most serious first; when the appliance stops for one (Action required), State names it. Each message also has its own alert device for notifications and scripts. |
 | **Washer meters** | Lifetime energy, water, detergent and softener as Domoticz meters, with use per day, month and year. |
 | **Opt-in control** | Choose a program, change options, start, stop, pause and resume, or start later at a chosen time. Off unless you turn on Allow control. |
 | **On-screen messages** | A refused or failed command says why and what to do next, at the top of the Domoticz screen. |

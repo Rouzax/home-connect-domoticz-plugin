@@ -119,6 +119,15 @@ def _where(update: planner.DeviceUpdate) -> str:
     return f"{device} unit {update.unit}"
 
 
+def _dollar(name: str) -> str:
+    """The name with the "$" prefix that hides a unit; one that already has it is kept as is."""
+    return name if name.startswith("$") else "$" + name
+
+
+def _created_name(update: planner.DeviceUpdate) -> str:
+    return _dollar(update.name) if update.hidden else update.name
+
+
 def _create(devices, update: planner.DeviceUpdate):
     """Create the unit; None when Domoticz did not register it."""
     # A type without a Python TypeName (an RFXMeter counter) is created by number instead.
@@ -127,7 +136,7 @@ def _create(devices, update: planner.DeviceUpdate):
     else:
         type_args = {"TypeName": update.type_name}
     new_unit = Domoticz.Unit(
-        Name=update.name,
+        Name=_created_name(update),
         DeviceID=update.device_id,
         Unit=update.unit,
         **type_args,
@@ -165,7 +174,7 @@ def apply_updates(devices, updates, state: persistence.State, *, allow_create: b
             if _create(devices, update) is None:
                 log("error", f"Could not create {_where(update)}")
                 continue
-            state.auto_names[name_key] = update.name
+            state.auto_names[name_key] = _created_name(update)
             created += 1
             continue
         # An update without options (no selector, or nothing planned) leaves the unit's Options
@@ -180,10 +189,13 @@ def apply_updates(devices, updates, state: persistence.State, *, allow_create: b
             unit.sValue = update.svalue
             unit.Update(Log=False)
         # Rename only while the name is still the one the plugin gave it: a user's own name wins.
-        if unit.Name != update.name and unit.Name == state.auto_names.get(name_key):
-            unit.Name = update.name
+        # A unit created hidden keeps its "$" through label changes; a plain one never gains it.
+        auto_name = state.auto_names.get(name_key)
+        target = _dollar(update.name) if auto_name and auto_name.startswith("$") else update.name
+        if unit.Name != target and unit.Name == auto_name:
+            unit.Name = target
             unit.Update(Log=False, UpdateProperties=True)
-            state.auto_names[name_key] = update.name
+            state.auto_names[name_key] = target
     return created
 
 

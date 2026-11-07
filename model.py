@@ -17,6 +17,9 @@ import text
 PRESENT = "BSH.Common.EnumType.EventPresentState.Present"
 START_ONLY = frozenset({"BSH.Common.Option.StartInRelative", "BSH.Common.Option.FinishInRelative"})
 IDLE_STATES = frozenset({"Inactive", "Ready"})
+# States a run is in, and the states after which entering one of them starts a new run.
+_RUN_STATES = frozenset({"DelayedStart", "Run"})
+_BETWEEN_RUNS = IDLE_STATES | {"Finished", "Aborting"}
 OPERATION_STATE = "BSH.Common.Status.OperationState"
 SELECTED_ROOT = "BSH.Common.Root.SelectedProgram"
 ACTIVE_ROOT = "BSH.Common.Root.ActiveProgram"
@@ -69,6 +72,9 @@ class Appliance:
     status: dict[str, Value] = field(default_factory=dict)
     settings: dict[str, Value] = field(default_factory=dict)
     options: dict[str, Value] = field(default_factory=dict)
+    # The option keys of each program's last selected or active payload. app.options only ever
+    # merges, so this is what tells which of its values belong to the program shown.
+    program_options: dict[str, frozenset[str]] = field(default_factory=dict)
     selected_program: str | None = None
     active_program: str | None = None
     events: dict[str, EventState] = field(default_factory=dict)
@@ -78,6 +84,9 @@ class Appliance:
     # Wall time each observed value was received. A countdown (remaining time, start or finish
     # in) is relative to that moment, not to whenever it is read (spec 6.2 unit 6).
     received: dict[str, float] = field(default_factory=dict)
+    # Sequence number from which observations belong to the current run (0: no run start seen).
+    # A run-scoped value or a prompt observed before it is left over from an earlier run.
+    run_started: int = 0
     cache: persistence.ApplianceCache = field(default_factory=persistence.ApplianceCache)
 
     def operation_state(self) -> str | None:
@@ -164,11 +173,46 @@ class Model:
             return None
         if issued is not None and app.seq.get(key, 0) > issued:
             return None  # a newer observation already arrived
-        store[key] = Value(entry.get("value"), str(entry.get("unit", "") or ""))
+        unit = str(entry.get("unit", "") or "")
+        if not unit and key in store:
+            unit = store[key].unit  # a key keeps its unit; not every report repeats it
+        store[key] = Value(entry.get("value"), unit)
         app.seq[key] = self.tick()
         app.received[key] = self._wall()
         self._remember_names(app, entry)
         return key
+
+    def _run_before(self, app: Appliance) -> tuple[int, str | None, bool]:
+        """What _mark_run_start compares with: the sequence number the next observation gets,
+        the state, and whether a run was known not to have an active program. A none observed
+        before the current stamp no longer counts: the run after it is already stamped, and a
+        late answer naming its program must not make that run's earlier values look left over."""
+        idle = (
+            ACTIVE_ROOT in app.seq
+            and app.active_program is None
+            and app.run_started < app.seq[ACTIVE_ROOT]
+        )
+        return self._seq + 1, app.operation_state(), idle
+
+    def _mark_run_start(self, app: Appliance, before: tuple[int, str | None, bool]) -> None:
+        """Stamp a run start: the state entering a run from between runs, or an active program
+        after an observed none. The first answer after a restart is neither, so a run already
+        going keeps its values. The stamp is the payload's first sequence number, so a value listed
+        in the same payload as the run start belongs to the new run, whatever its place."""
+        first, state, no_program = before
+        entered = state in _BETWEEN_RUNS and app.operation_state() in _RUN_STATES
+        if entered or (no_program and app.active_program is not None):
+            app.run_started = first
+
+    def _end_idle_program(self, app: Appliance) -> None:
+        """An idle appliance has no active program. The item saying so can be lost while the
+        appliance is off the network (an oven's microwave can cut its Wi-Fi until the program
+        ends), leaving the last program "running" next to an idle state. Only a state observed
+        after the program counts, so an answer issued before the state cannot bring it back."""
+        state_seq = app.seq.get(OPERATION_STATE, 0)
+        if app.active_program and app.is_idle() and state_seq > app.seq.get(ACTIVE_ROOT, 0):
+            app.active_program = None
+            app.seq[ACTIVE_ROOT] = self.tick()
 
     def _remember_names(self, app: Appliance, entry: dict) -> None:
         if isinstance(entry.get("name"), str) and entry["name"]:
@@ -220,8 +264,11 @@ class Model:
     def apply_status(self, ha_id: str, payload, issued: int) -> None:
         app = self.appliances.get(ha_id)
         if app is not None:
+            before = self._run_before(app)
             for entry in _entries(payload, "status"):
                 self._observe(app, app.status, entry, issued)
+            self._mark_run_start(app, before)
+            self._end_idle_program(app)
 
     def apply_settings(self, ha_id: str, payload, issued: int) -> None:
         app = self.appliances.get(ha_id)
@@ -238,6 +285,11 @@ class Model:
             return  # a program event arrived after this request was issued
         data = _data(payload) if payload is not None else {}
         key = data.get("key") if text.valid_key(data.get("key")) else None
+        if kind == "active" and key and app.operation_state() in IDLE_STATES:
+            # An idle appliance runs nothing. After a reconnect this answer can lag the stream
+            # and still name the program the stream has already ended.
+            return
+        before = self._run_before(app)
         if kind == "active":
             app.active_program = key
         else:
@@ -245,10 +297,16 @@ class Model:
         app.seq[root] = self.tick()
         if key and isinstance(data.get("name"), str):
             app.names[key] = text.clean_label(data["name"])
+        if key:
+            entries = option_list(data)
+            app.program_options[key] = frozenset(
+                e["key"] for e in entries if text.valid_key(e.get("key"))
+            )
         # Options describe the active program while one runs, otherwise the selected one.
         if key and (kind == "active" or app.active_program is None):
-            for entry in option_list(data):
+            for entry in entries:
                 self._observe(app, app.options, entry, issued)
+        self._mark_run_start(app, before)
 
     def apply_available(self, ha_id: str, payload, state_stamp: str | None) -> None:
         app = self.appliances.get(ha_id)
@@ -373,6 +431,7 @@ class Model:
             return EventEffect(ha_id, kind)
         changed: str | None = None
         unknown: list[str] = []
+        before = self._run_before(app)
         for item in sse.items(event):
             key = item.get("key")
             if not text.valid_key(key):
@@ -411,4 +470,6 @@ class Model:
                 self._observe(app, app.options, item, None)
             else:
                 self._observe(app, app.status, item, None)
+        self._mark_run_start(app, before)
+        self._end_idle_program(app)
         return EventEffect(ha_id, kind, changed, tuple(unknown))

@@ -53,6 +53,8 @@ STATE_COLOUR = {
     "Error": RED,
 }
 EVENT_LEVEL_COLOUR = {"info": GREY, "hint": YELLOW, "warning": ORANGE, "alert": RED}
+# Home Connect event levels, most serious highest; a level not listed ranks 0 (`.get(level, 0)`).
+EVENT_RANK = {"alert": 4, "warning": 3, "hint": 2, "info": 1}
 
 # Domoticz built-in icon ids: zero-based line numbers of www/switch_icons.txt. The plugin API's
 # Image= sets the CustomImage column (hardware/plugins/PythonObjectEx.cpp), and domoticz_api
@@ -111,6 +113,8 @@ _WORDS = {
     "about": ("about", "ongeveer"),
     "not_available": ("Not available", "Niet beschikbaar"),
     "no_notification": ("No notification", "Geen melding"),
+    "notifications": ("Notifications", "Meldingen"),
+    "action_more": ("(+{n})", "(+{n})"),
     "status_code": ("Status code", "Statuscode"),
     "unknown": ("Unknown", "Onbekend"),
     "local": ("Local operation", "Lokale bediening"),
@@ -144,10 +148,10 @@ _WORDS = {
 # the card is called. Keep each to one or two short sentences: the dialog is small.
 _DESCRIPTIONS = {
     "state": (
-        'What the appliance is doing now, with the running program; "{last_known}" means no '
-        "update has arrived for a while.",
-        'Wat het apparaat nu doet, met het lopende programma; "{last_known}" betekent dat er al '
-        "een tijd geen update is binnengekomen.",
+        "What the appliance is doing now, with the running program, its phase, progress and "
+        'finish time; "{last_known}" means no update has arrived for a while.',
+        "Wat het apparaat nu doet, met het lopende programma, de fase, de voortgang en de "
+        'eindtijd; "{last_known}" betekent dat er al een tijd geen update is binnengekomen.',
     ),
     "power": (
         "Switches the appliance on or off; some appliances can be switched on here but not off.",
@@ -171,10 +175,11 @@ _DESCRIPTIONS = {
         "de minuten sinds de start.",
     ),
     "program": (
-        'The running program and when it will be ready. "({selected})" means chosen on the '
-        "appliance or in {program_select}, but not started yet.",
-        'Het lopende programma en wanneer het klaar is. "({selected})" betekent: gekozen op het '
-        "apparaat of in {program_select}, maar nog niet gestart.",
+        "The program and the settings that differ from normal. "
+        '"({selected})" means chosen on the appliance or in {program_select}, but not started yet.',
+        "Het programma en de instellingen die afwijken van normaal. "
+        '"({selected})" betekent: gekozen op het apparaat of in {program_select}, maar nog niet '
+        "gestart.",
     ),
     "remote": (
         "Whether the appliance accepts a start from Domoticz; switch remote start on at the "
@@ -244,6 +249,12 @@ _DESCRIPTIONS = {
     "event": (
         'A message from the appliance; it reads "{no_notification}" when there is none.',
         'Een melding van het apparaat; er staat "{no_notification}" als er geen is.',
+    ),
+    "notifications": (
+        "The open messages that need you, most serious first. Each message also has a device of "
+        "its own for scripts.",
+        "De openstaande meldingen waar je iets aan moet doen, de ernstigste eerst. Elke melding "
+        "heeft ook een eigen device voor scripts.",
     ),
     "favourite": (
         "Turns on briefly when the favourite button on the appliance is pressed; use it to "
@@ -416,6 +427,87 @@ _NAMES = {
         "Ecolysis cleaning needed",
         "Ecolysis-reiniging nodig",
     ),
+    "ConsumerProducts.CoffeeMaker.Event.BeanContainerEmpty": (
+        "Bean container empty",
+        "Bonenreservoir leeg",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.CalcNCleanIn20Cups": (
+        "Calc'nClean in 20 cups",
+        "Calc'nClean over 20 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.CalcNCleanIn15Cups": (
+        "Calc'nClean in 15 cups",
+        "Calc'nClean over 15 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.CalcNCleanIn10Cups": (
+        "Calc'nClean in 10 cups",
+        "Calc'nClean over 10 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.CalcNCleanIn5Cups": (
+        "Calc'nClean in 5 cups",
+        "Calc'nClean over 5 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DescalingIn20Cups": (
+        "Descaling in 20 cups",
+        "Ontkalken over 20 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DescalingIn15Cups": (
+        "Descaling in 15 cups",
+        "Ontkalken over 15 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DescalingIn10Cups": (
+        "Descaling in 10 cups",
+        "Ontkalken over 10 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DescalingIn5Cups": (
+        "Descaling in 5 cups",
+        "Ontkalken over 5 kopjes",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceCalcNCleanBlockage": (
+        "Calc'nClean overdue, machine blocked",
+        "Calc'nClean achterstallig, machine geblokkeerd",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceCalcNCleanOverdue": (
+        "Calc'nClean overdue",
+        "Calc'nClean achterstallig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceCleaningOverdue": (
+        "Cleaning overdue",
+        "Reiniging achterstallig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceDescalingBlockage": (
+        "Descaling overdue, machine blocked",
+        "Ontkalken achterstallig, machine geblokkeerd",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceDescalingOverdue": (
+        "Descaling overdue",
+        "Ontkalken achterstallig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceShouldBeCalcNCleaned": (
+        "Calc'nClean needed",
+        "Calc'nClean nodig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceShouldBeCleaned": (
+        "Cleaning needed",
+        "Reiniging nodig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DeviceShouldBeDescaled": (
+        "Descaling needed",
+        "Ontkalken nodig",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.DripTrayFull": ("Drip tray full", "Lekbak vol"),
+    "ConsumerProducts.CoffeeMaker.Event.KeepMilkTankCool": (
+        "Keep milk tank cool",
+        "Melkreservoir koel houden",
+    ),
+    "ConsumerProducts.CoffeeMaker.Event.WaterTankEmpty": (
+        "Water tank empty",
+        "Waterreservoir leeg",
+    ),
+    "LaundryCare.Washer.Event.DrumCleanReminder": (
+        "Drum cleaning needed",
+        "Trommelreiniging nodig",
+    ),
     "Cooking.Oven.Event.PreheatFinished": ("Preheat finished", "Voorverwarmen klaar"),
     "Cooking.Oven.Status.LastRemoteStartRelease": (
         "Remote start last enabled",
@@ -484,6 +576,14 @@ _NAMES = {
         "Hoe het programma eindigde",
     ),
     "Cooking.Oven.Option.Level": ("Heating level", "Verwarmingsniveau"),
+    "Cooking.Oven.Status.FrontPanelOpen": ("Front panel open", "Voorpaneel open"),
+    "Cooking.Oven.Status.WaterTankUnplugged": ("Water tank removed", "Waterreservoir verwijderd"),
+    "Cooking.Oven.Status.WaterTankEmpty": ("Water tank empty", "Waterreservoir leeg"),
+    "Cooking.Oven.Event.EmptyWaterContainer": ("Empty the water tank", "Waterreservoir legen"),
+    "LaundryCare.Dryer.Event.RefresherContainerEmpty": (
+        "Refresher water empty",
+        "Water opfrisser leeg",
+    ),
     # Programs whose Home Connect name carries a typo ("MIx", "Super Quick 40`").
     "LaundryCare.Dryer.Program.InBasket": ("Wool in drying basket", "Wol in droogkorf"),
     "LaundryCare.Dryer.Program.Mix": ("Mix", "Mix"),
@@ -545,13 +645,18 @@ _NAMES = {
 # Enum values whose Home Connect name is English in every language. They win over that name.
 _VALUE_NAMES = {
     "BSH.Common.EnumType.AmbientLightColor.CustomColor": ("Custom colour", "Eigen kleur"),
+    "Cooking.Oven.EnumType.Level.Level01": ("Level 1", "Niveau 1"),
+    "Cooking.Oven.EnumType.Level.Level02": ("Level 2", "Niveau 2"),
+    "Cooking.Oven.EnumType.Level.Level03": ("Level 3", "Niveau 3"),
     "Dishcare.Dishwasher.EnumType.ProgramPhase.None": ("Not running", "Niet actief"),
+    "LaundryCare.Common.EnumType.ProcessPhase.None": ("Not running", "Niet actief"),
 }
-# Status values that describe the current run, with the value they show outside a run. Home
-# Connect reports the reset value when a program starts but not when it ends, so the last phase
-# would otherwise stay on the card until the next run.
+# Statuses and options that describe the current run, with the value they show outside a run.
+# Home Connect reports the reset value, if at all, when a program starts but not when it ends,
+# so the last phase would otherwise stay on the card until the next run reports its own.
 RUN_SCOPED = {
     "Dishcare.Dishwasher.Status.ProgramPhase": "Dishcare.Dishwasher.EnumType.ProgramPhase.None",
+    "LaundryCare.Common.Option.ProcessPhase": "LaundryCare.Common.EnumType.ProcessPhase.None",
 }
 # Numbered enum values Home Connect usually sends no name for (most ambient light colours), so
 # the number is what tells them apart. A name Home Connect does send wins ("cold white").
@@ -643,6 +748,9 @@ _DIAGNOSTIC = frozenset(
         "LaundryCare.Dryer.Status.ConnectedDry.Version",
         "LaundryCare.Dryer.Status.RefresherFillLevel",
         "BSH.Common.Status.ProgramRunDetail.EndTrigger",
+        "Cooking.Oven.Status.FrontPanelOpen",
+        "Cooking.Oven.Status.WaterTankEmpty",
+        "Cooking.Oven.Status.WaterTankUnplugged",
     }
 )
 # Options a dashboard is read for while a program runs. Every other option describes how the
@@ -654,8 +762,42 @@ _MAIN_OPTIONS = frozenset(
         "LaundryCare.Common.Option.ProcessPhase",
     }
 )
+# Phase of the running program; State and Program show what is running, so these start hidden.
+_PHASE_KEYS = frozenset(
+    {"LaundryCare.Common.Option.ProcessPhase", "Dishcare.Dishwasher.Status.ProgramPhase"}
+)
 # Messages nobody notifies on: feedback prompts (".Request") and the dryer's cool-down.
 _QUIET_EVENTS = frozenset({"LaundryCare.Dryer.Event.CoolDownPhaseRunning"})
+# Events that report something ended; they do not need the user, so they stay off the
+# Notifications card (a finished program is already shown as the appliance state).
+FINISHED_EVENTS = frozenset(
+    {
+        "BSH.Common.Event.ProgramFinished",
+        "BSH.Common.Event.ProgramAborted",
+        "BSH.Common.Event.AlarmClockElapsed",
+        "Cooking.Oven.Event.PreheatFinished",
+        "Cooking.Oven.Event.RegularPreheatFinished",
+        "LaundryCare.Dryer.Event.DryingProcessFinished",
+    }
+)
+
+
+def is_prompt(key: str) -> bool:
+    """A feedback prompt ("rate your last drying cycle"): asked after a run, acted on by nobody."""
+    return ".Event." in key and key.endswith(".Request")
+
+
+def is_action_event(key: str) -> bool:
+    """Whether an event may need the user: any message except favourite triggers, feedback
+    prompts, quiet events and "something ended" events. An event the catalog has never seen
+    counts, since it could be a fault."""
+    return (
+        ".Event." in key
+        and not is_favourite(key)
+        and not is_prompt(key)
+        and key not in _QUIET_EVENTS
+        and key not in FINISHED_EVENTS
+    )
 
 
 def used_at_creation(key: str, main_setting: bool = False) -> bool:
@@ -666,12 +808,22 @@ def used_at_creation(key: str, main_setting: bool = False) -> bool:
     it is one of the main few; anything else when it is named and not a diagnostic. Domoticz
     applies Used at creation only, so a user's own choice is kept."""
     if ".Event." in key:
-        return not (key.endswith(".Request") or key in _QUIET_EVENTS)
+        return not (is_prompt(key) or key in _QUIET_EVENTS)
     if ".Setting." in key:
         return main_setting
     if ".Option." in key:
         return key in _MAIN_OPTIONS
     return known(key) and key not in _DIAGNOSTIC
+
+
+def hidden_at_creation(key: str) -> bool:
+    """Whether a value's device is created with a "$" name: used, so dzVents and Lua see it, but
+    off the dashboard. Per-item messages (the Notifications card and the State card carry them
+    to the user) and the phase units, which the State and Program text already describe. A
+    favourite trigger is a button the user may want on the dashboard."""
+    if ".Event." in key:
+        return used_at_creation(key) and not is_favourite(key)
+    return key in _PHASE_KEYS
 
 
 def known(key: str) -> bool:
