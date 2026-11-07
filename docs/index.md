@@ -16,12 +16,13 @@ the dishwasher still needs, the oven temperature, a rinse aid warning.
 
 - **See every appliance at a glance.** Washers, dryers, dishwashers, ovens, microwaves, fridges
   and the other Home Connect appliance types appear by themselves after you sign in.
-- **Follow a program.** State, program, progress, remaining time and the time it will be
-  ready, updated within seconds from Home Connect's event stream.
+- **Follow a program.** One State card shows the state, program, phase, progress and the time
+  it will be ready, updated within seconds from Home Connect's event stream.
 - **Automate on it.** A Status code device gives every state a fixed number, so a dzVents or
   Lua script keeps working whatever language the devices are in.
-- **Get alerts.** Appliance messages such as "program finished", "rinse aid nearly empty" or
-  "preheat finished" become Domoticz alert devices you can notify on.
+- **Get alerts.** A Notifications card lists the messages that need you, such as "drip tray
+  full" or "rinse aid nearly empty", and each message ("program finished", "preheat finished")
+  is also an alert device you can notify on.
 - **Track the washing machine's use.** Its lifetime energy, water, detergent and softener totals
   are Domoticz meters, so you see the use per day, month and year.
 - **Operate appliances (optional).** Choose a program, change its options, start, stop, pause

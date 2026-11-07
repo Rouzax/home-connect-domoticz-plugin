@@ -153,3 +153,125 @@ def test_meters_name_their_quantity_in_both_languages():
     assert energy.reported == "Wh"
     assert catalog.meter("BSH.Common.Status.Program.All.Count.Completed") is None
     assert catalog.pick(("Detergent", "Wasmiddel"), "nl") == "Wasmiddel"
+
+
+def test_finished_and_action_events_are_split():
+    assert not catalog.is_action_event("BSH.Common.Event.ProgramFinished")
+    assert catalog.is_action_event("ConsumerProducts.CoffeeMaker.Event.DripTrayFull")
+    assert catalog.is_action_event("Vendor.Unknown.Event.Something")  # unknown may need the user
+    assert not catalog.is_action_event(
+        "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDryPlus.Request"
+    )
+    assert not catalog.is_action_event("LaundryCare.Dryer.Event.CoolDownPhaseRunning")
+    assert not catalog.is_action_event("BSH.Common.Event.Favorite.001.ExternalTrigger")
+    assert not catalog.is_action_event("BSH.Common.Status.DoorState")
+
+
+def test_finished_events_cover_every_ending():
+    assert {
+        "BSH.Common.Event.ProgramFinished",
+        "BSH.Common.Event.ProgramAborted",
+        "LaundryCare.Dryer.Event.DryingProcessFinished",
+        "Cooking.Oven.Event.PreheatFinished",
+        "Cooking.Oven.Event.RegularPreheatFinished",
+        "BSH.Common.Event.AlarmClockElapsed",
+    } <= catalog.FINISHED_EVENTS
+
+
+def test_event_rank_orders_levels():
+    rank = catalog.EVENT_RANK
+    assert rank["alert"] > rank["warning"] > rank["hint"] > rank["info"] > 0
+    assert rank.get("other", 0) == 0
+
+
+def test_coffee_events_have_names_in_both_languages():
+    for key in (
+        "BeanContainerEmpty",
+        "CalcNCleanIn20Cups",
+        "CalcNCleanIn5Cups",
+        "DescalingIn15Cups",
+        "DescalingIn5Cups",
+        "DeviceCalcNCleanBlockage",
+        "DeviceCalcNCleanOverdue",
+        "DeviceCleaningOverdue",
+        "DeviceDescalingBlockage",
+        "DeviceDescalingOverdue",
+        "DeviceShouldBeCalcNCleaned",
+        "DeviceShouldBeCleaned",
+        "DeviceShouldBeDescaled",
+        "DripTrayFull",
+        "KeepMilkTankCool",
+        "WaterTankEmpty",
+    ):
+        full = f"ConsumerProducts.CoffeeMaker.Event.{key}"
+        assert catalog.catalog_name(full, "en"), key
+        assert catalog.catalog_name(full, "nl"), key
+        assert catalog.catalog_name(full, "nl") != catalog.catalog_name(full, "en"), key
+    assert catalog.catalog_name("LaundryCare.Washer.Event.DrumCleanReminder", "nl")
+    assert catalog.catalog_name("LaundryCare.Washer.Event.DrumCleanReminder", "en")
+
+
+def test_notifications_words_and_description():
+    assert catalog.word("notifications", "en") == "Notifications"
+    assert catalog.word("notifications", "nl") == "Meldingen"
+    for lang in ("en", "nl"):
+        assert catalog.word("action_more", lang).format(n=2) == "(+2)"
+        # Existing message devices keep their plain names, so the text must not promise a "$".
+        assert "$" not in catalog.description("notifications", lang)
+        assert "scripts" in catalog.description("notifications", lang)
+    assert " jij " not in catalog.description("notifications", "nl")
+
+
+def test_keys_home_connect_names_in_english_on_a_dutch_install_have_dutch_names():
+    for key in (
+        "LaundryCare.Washer.Event.DrumCleanReminder",
+        "LaundryCare.Dryer.Status.ConnectedDry.OperationStatus",
+        "BSH.Common.Status.ProgramRunDetail.EndTrigger",
+        "Cooking.Oven.Option.Level",
+        "LaundryCare.Dryer.Status.RefresherFillLevel",
+        "Cooking.Oven.Status.FrontPanelOpen",
+        "Cooking.Oven.Status.WaterTankUnplugged",
+        "Cooking.Oven.Status.WaterTankEmpty",
+        "Cooking.Oven.Event.EmptyWaterContainer",
+        "LaundryCare.Dryer.Event.RefresherContainerEmpty",
+    ):
+        assert catalog.catalog_name(key, "nl") not in (None, catalog.catalog_name(key, "en")), key
+
+
+def test_oven_levels_and_the_idle_dryer_phase_have_dutch_value_names():
+    assert catalog.value_name({}, "Cooking.Oven.EnumType.Level.Level03", "nl") == "Niveau 3"
+    # Home Connect's English name loses to the catalog's on a Dutch install.
+    english = {"Cooking.Oven.EnumType.Level.Level03": "Level 3"}
+    assert catalog.value_name(english, "Cooking.Oven.EnumType.Level.Level03", "nl") == "Niveau 3"
+    assert catalog.value_name(english, "Cooking.Oven.EnumType.Level.Level03", "en") == "Level 3"
+    idle = catalog.RUN_SCOPED["LaundryCare.Common.Option.ProcessPhase"]
+    assert catalog.value_name({}, idle, "nl") == "Niet actief"
+    assert catalog.value_name({}, idle, "en") == "Not running"
+
+
+def test_prompts_are_the_request_events():
+    assert catalog.is_prompt("LaundryCare.Dryer.Event.ProgramFeedback.CupboardDry.Request")
+    assert not catalog.is_prompt("BSH.Common.Event.ProgramFinished")
+    assert not catalog.is_prompt("Vendor.Status.Request")
+
+
+def test_oven_water_tank_and_front_panel_statuses_start_unused():
+    for key in (
+        "Cooking.Oven.Status.FrontPanelOpen",
+        "Cooking.Oven.Status.WaterTankEmpty",
+        "Cooking.Oven.Status.WaterTankUnplugged",
+    ):
+        assert catalog.known(key), key
+        assert not catalog.used_at_creation(key), key
+
+
+def test_coffee_overdue_messages_read_achterstallig():
+    for event in (
+        "DeviceCalcNCleanBlockage",
+        "DeviceCalcNCleanOverdue",
+        "DeviceCleaningOverdue",
+        "DeviceDescalingBlockage",
+        "DeviceDescalingOverdue",
+    ):
+        name = catalog.name_for({}, f"ConsumerProducts.CoffeeMaker.Event.{event}", "nl")
+        assert "achterstallig" in name and "te laat" not in name, name

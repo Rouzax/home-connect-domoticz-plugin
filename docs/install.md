@@ -90,8 +90,10 @@ the hardware settings does the same).
 
 ## What happens next
 
-- Each appliance gets a set of devices: state, program, remaining time and more. Devices for
-  values most people never need are created hidden. [Devices](devices.md) lists them.
+- Each appliance gets a set of devices. Only a few go on the dashboard (State, Notifications,
+  Program, and on some appliances the values you operate or watch, such as a fridge's
+  setpoints); the rest are created off it, for scripts or for values most people never need.
+  [Devices](devices.md) lists them.
 - The plugin keeps a live connection to Home Connect and updates devices as the appliances
   report changes. It does not poll every few seconds, so it stays well within Home Connect's
   daily request limit.

@@ -194,6 +194,7 @@ def test_program_payload_sets_options_and_names():
             ],
         }
     }
+    m.apply_status(HA, status("Run"), m.tick())  # an active program belongs to a run
     m.apply_program(HA, "active", payload, m.tick())
     app = m.appliances[HA]
     assert app.active_program == "P.A"
@@ -201,6 +202,23 @@ def test_program_payload_sets_options_and_names():
     assert app.options["Cooking.Oven.Option.SetpointTemperature"].value == 180
     m.apply_program(HA, "active", None, m.tick())
     assert app.active_program is None
+
+
+def test_program_payload_records_which_options_belong_to_the_program():
+    m = ready_model()
+    temp, prewash = "X.Option.Temperature", "X.Option.Prewash"
+    first = {"data": {"key": "P.A", "options": [{"key": temp, "value": 40}, {"key": prewash}]}}
+    m.apply_program(HA, "selected", first, m.tick())
+    app = m.appliances[HA]
+    assert app.program_options["P.A"] == frozenset({temp, prewash})
+    again = {"data": {"key": "P.A", "options": [{"key": prewash, "value": True}]}}
+    m.apply_program(HA, "selected", again, m.tick())
+    assert app.program_options["P.A"] == frozenset({prewash})  # replaced, not merged
+    m.apply_program(HA, "selected", {"data": {"key": "P.B"}}, m.tick())
+    assert app.program_options["P.B"] == frozenset()  # no option list: no options
+    assert temp in app.options  # the values themselves are kept for the option devices
+    m.apply_program(HA, "selected", None, m.tick())
+    assert set(app.program_options) == {"P.A", "P.B"}
 
 
 def test_capabilities():
@@ -301,6 +319,7 @@ def test_running_appliance_with_short_list_never_shrinks_programs_or_options():
     full = {"data": {"programs": [{"key": "P.A"}, {"key": "P.B"}, {"key": "P.C"}]}}
     m.apply_available(HA, full, state_stamp="Ready")
     m.apply_program_detail(HA, "P.A", detail("P.A", 30, 250))
+    m.apply_status(HA, status("Run"), m.tick())
     m.apply_program(
         HA,
         "active",
@@ -583,3 +602,142 @@ def test_listing_connected_after_an_offline_answer_asks_for_a_resync():
     m.set_offline(HA)
     m.apply_list(listing(HA, connected=False), m.tick())
     assert not app.connected and not app.resync_due
+
+
+PHASE = "LaundryCare.Common.Option.ProcessPhase"
+
+
+def run_event(state, *extra):
+    item = {"key": OP, "value": f"BSH.Common.EnumType.OperationState.{state}"}
+    return event("STATUS", [*extra, item])
+
+
+def test_a_run_start_stamps_the_run_and_values_of_the_same_event_belong_to_it():
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_event(event("NOTIFY", [{"key": PHASE, "value": "Old.Phase"}]))
+    old = app.seq[PHASE]
+    assert app.run_started < old  # nothing has started a run yet
+    m.apply_event(
+        event(
+            "NOTIFY",
+            [
+                {"key": PHASE, "value": "New.Phase"},
+                {"key": OP, "value": "BSH.Common.EnumType.OperationState.Run"},
+            ],
+        )
+    )
+    assert app.run_started > old
+    assert app.seq[PHASE] >= app.run_started  # listed before the state, still this run's
+
+
+def test_only_a_state_change_into_a_run_starts_one():
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_event(run_event("DelayedStart"))
+    started = app.run_started
+    assert started > 0
+    for state in ("Run", "Pause", "Run", "ActionRequired", "Run"):
+        m.apply_event(run_event(state))
+    assert app.run_started == started
+    m.apply_event(run_event("Finished"))
+    m.apply_event(run_event("Run"))
+    assert app.run_started > started
+
+
+def test_an_active_program_after_none_starts_a_run_but_the_first_answer_does_not():
+    m = ready_model()
+    app = m.appliances[HA]
+    payload = {"data": {"key": "P.A", "options": []}}
+    m.apply_program(HA, "active", payload, m.tick())  # first answer after a restart
+    assert app.run_started == 0
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": None}]))
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": "P.A"}]))
+    assert app.run_started == app.seq[ACTIVE]
+    stamp = app.run_started
+    m.apply_program(HA, "active", payload, m.tick())  # a refetch mid-run
+    assert app.run_started == stamp
+
+
+def test_a_late_active_program_answer_does_not_restart_a_stamped_run():
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_program(HA, "active", None, m.tick())  # no program between runs
+    issued = m.tick()
+    m.apply_event(run_event("Run"))
+    started = app.run_started
+    m.apply_event(event("NOTIFY", [{"key": PHASE, "value": "New.Phase"}]))
+    m.apply_program(HA, "active", {"data": {"key": "P.A", "options": []}}, issued)
+    assert app.run_started == started
+    assert app.seq[PHASE] >= app.run_started  # the phase still belongs to this run
+
+
+def test_the_first_status_answer_after_a_restart_does_not_start_a_run():
+    m = model.Model()
+    m.apply_list(listing(HA), 1)
+    app = m.appliances[HA]
+    assert app.operation_state() is None
+    m.apply_status(HA, status("Run"), m.tick())
+    assert app.operation_state() == "Run"
+    assert app.run_started == 0
+
+
+def test_a_rest_state_answer_into_a_run_starts_one():
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_status(HA, status("Run"), m.tick())
+    assert app.run_started == app.seq[OP]
+
+
+def test_a_value_reported_without_its_unit_keeps_the_known_one():
+    m = ready_model()
+    key = "Test.Option.Load"
+    m.apply_event(event("NOTIFY", [{"key": key, "value": 9000, "unit": "gram"}]))
+    m.apply_event(event("NOTIFY", [{"key": key, "value": 8000}]))
+    assert m.appliances[HA].options[key] == model.Value(8000, "gram")
+
+
+BOOST = "Cooking.Oven.Program.Microwave.Boost"
+
+
+def test_an_idle_state_ends_an_active_program_whose_end_was_missed():
+    # A microwave program can cut the oven's Wi-Fi: the "no active program" item never arrives,
+    # only the idle state after it. An idle appliance has no active program.
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": BOOST}]))
+    m.apply_event(run_event("Run"))
+    m.apply_event(run_event("Inactive"))
+    assert app.active_program is None
+
+
+def test_an_idle_rest_state_ends_it_too_but_finished_keeps_the_program():
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": BOOST}]))
+    m.apply_status(HA, status("Finished"), m.tick())
+    assert app.active_program == BOOST
+    m.apply_status(HA, status("Ready"), m.tick())
+    assert app.active_program is None
+
+
+def test_an_active_program_answer_older_than_the_idle_state_is_ignored():
+    m = ready_model()
+    app = m.appliances[HA]
+    issued = m.tick()
+    m.apply_event(run_event("Inactive"))
+    m.apply_program(HA, "active", {"data": {"key": BOOST, "options": []}}, issued)
+    assert app.active_program is None
+
+
+def test_a_stale_active_program_answer_after_the_idle_state_is_ignored():
+    # After a reconnect the REST answer can lag the stream: Home Connect still names the program
+    # the stream has already ended ("Inactive" and ActiveProgram null arrived first).
+    m = ready_model()
+    app = m.appliances[HA]
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": BOOST}]))
+    m.apply_event(run_event("Run"))
+    m.apply_event(run_event("Inactive"))
+    m.apply_event(event("NOTIFY", [{"key": ACTIVE, "value": None}]))
+    m.apply_program(HA, "active", {"data": {"key": BOOST, "options": []}}, m.tick())
+    assert app.active_program is None

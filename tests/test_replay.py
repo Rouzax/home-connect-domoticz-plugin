@@ -8,6 +8,7 @@ into the fake Domoticz. Offline and fast: nothing here touches the network or th
 
 import json
 from collections import Counter, deque
+from dataclasses import replace
 from pathlib import Path
 
 import budget
@@ -328,3 +329,61 @@ def test_washer_settings_get_devices_with_control_off(domoticz):
     for key in wanted:
         assert key in allocated, key
         assert allocated[key] in units, key
+
+
+def _visible(domoticz, app: model.Appliance) -> dict:
+    return {n: u for n, u in _units(domoticz, app).items() if u.Used and not u.Name.startswith("$")}
+
+
+def test_new_install_control_off_keeps_the_dashboard_to_the_essentials(domoticz):
+    replay, _ = _full_replay(domoticz)
+    cards = {planner.UNIT_STATE, planner.UNIT_NOTIFICATIONS, planner.UNIT_PROGRAM}
+    oven_extra = {
+        "Cooking.Oven.Status.CurrentCavityTemperature",
+        "Cooking.Oven.Option.SetpointTemperature",
+        "BSH.Common.Option.Duration",
+    }
+    for app in replay.model.appliances.values():
+        for unit, device in _visible(domoticz, app).items():
+            key = device.Options.get("HCKey")
+            if unit in cards or key in catalog._METERS:
+                continue
+            assert app.type == "Oven" and key in oven_extra, (app.type, device.Name)
+
+
+def test_scripts_still_see_the_hidden_units(domoticz):
+    replay, _ = _full_replay(domoticz)
+    fixed = messages = 0
+    for app in replay.model.appliances.values():
+        units = _units(domoticz, app)
+        for unit in (planner.UNIT_DOOR, planner.UNIT_PROGRESS, planner.UNIT_TIME):
+            if unit in units:
+                assert units[unit].Name.startswith("$") and units[unit].Used
+                fixed += 1
+        for device in units.values():
+            if ".Event." in str(device.Options.get("HCKey")):
+                assert device.Name.startswith("$") and device.Used, device.Name
+                messages += 1
+    assert fixed and messages
+
+
+def test_existing_install_keeps_names_and_used(domoticz):
+    replay = Replay()
+    replay.discover()
+    replay.stream()
+    updates, _, _ = replay.plan()
+    plain = [replace(u, hidden=False) for u in updates]
+    domoticz_api.apply_updates(domoticz.Devices, plain, replay.state)
+    before = {
+        (d, n): (u.Name, u.Used)
+        for d, dev in domoticz.Devices.items()
+        for n, u in dev.Units.items()
+    }
+    updates, _, _ = replay.plan()
+    domoticz_api.apply_updates(domoticz.Devices, updates, replay.state)
+    after = {
+        (d, n): (u.Name, u.Used)
+        for d, dev in domoticz.Devices.items()
+        for n, u in dev.Units.items()
+    }
+    assert after == before

@@ -25,9 +25,14 @@ UNIT_PROGRAM_SELECT, UNIT_ACTIONS, UNIT_ACK = 8, 9, 10
 UNIT_STATUS_CODE = 11
 # Delayed start as a clock-time selector (spec 6.3), on appliances that offer a delay.
 UNIT_DELAYED_START = 12
+# The open messages that need the user, one card per appliance (spec: Notifications).
+UNIT_NOTIFICATIONS = 13
 # Fixed units whose levels come from Home Connect data rather than from code: their key list
 # travels in HCKeys, so a lost snapshot is recovered from the device as for a dynamic selector.
 DATA_DRIVEN_FIXED_UNITS = (UNIT_PROGRAM_SELECT,)
+# Fixed units created with a "$" name: door, progress and remaining time.
+_HIDDEN_UNITS = frozenset({UNIT_DOOR, UNIT_PROGRESS, UNIT_TIME})
+
 # Units that exist only while AllowControl is on, hidden and shown once per transition (spec
 # 6.4). The program selector is not one of them: it also tells scripts, as a level that never
 # changes meaning, which program is selected or running.
@@ -93,6 +98,33 @@ _NUMERIC_KINDS = (
 # No real reading comes near this; a larger number (still finite after json.loads) would overflow
 # time.localtime() in a finish time or fill a device with hundreds of digits.
 _NUMBER_LIMIT = 1e12
+# The phase of a running program, shown on the State line.
+_PROCESS_PHASE = "LaundryCare.Common.Option.ProcessPhase"
+_PROGRAM_PHASE = "Dishcare.Dishwasher.Status.ProgramPhase"
+# Options the State line, the run cards or the delayed-start selector already show; the Program
+# text leaves them out.
+_RUN_OPTION_KEYS = frozenset(
+    {
+        catalog.PROGRESS,
+        catalog.REMAINING,
+        catalog.ELAPSED,
+        catalog.ESTIMATED,
+        catalog.FINISH_IN,
+        catalog.START_IN,
+        "BSH.Common.Option.EstimatedTotalProgramTime",
+        _PROCESS_PHASE,
+    }
+)
+# Options that report a reading or a link to another appliance rather than a setting of the
+# program; the Program text leaves them out too.
+_READING_OPTION_KEYS = frozenset(
+    {
+        "BSH.Common.Option.EnergyForecast",
+        "BSH.Common.Option.WaterForecast",
+        "LaundryCare.Common.Option.LoadRecommendation",
+        "LaundryCare.Common.Option.ReferToProgram",
+    }
+)
 
 # The kind of each fixed unit, for what the kind decides beyond the type (the icon).
 _FIXED_KINDS = {
@@ -108,6 +140,7 @@ _FIXED_KINDS = {
     UNIT_ACTIONS: "selector",
     UNIT_ACK: "push",
     UNIT_DELAYED_START: "selector",
+    UNIT_NOTIFICATIONS: "alert",
 }
 
 # What each fixed unit's description explains, and which of them send commands to the appliance.
@@ -122,6 +155,7 @@ _FIXED_DESCRIPTIONS = {
     UNIT_STATUS_CODE: "status_code",
     UNIT_PROGRAM_SELECT: "program_select",
     UNIT_ACK: "acknowledge",
+    UNIT_NOTIFICATIONS: "notifications",
 }
 _COMMAND_UNITS = frozenset(
     {UNIT_POWER, UNIT_PROGRAM_SELECT, UNIT_ACTIONS, UNIT_ACK, UNIT_DELAYED_START}
@@ -180,6 +214,9 @@ class DeviceUpdate:
     description: str = ""  # applied at creation only, so a user's own text survives
     # Numeric (Type, Subtype), used at creation instead of type_name when set.
     type_code: tuple[int, int] | None = None
+    # Creation only: the unit is created with a "$" name prefix, which hides it from the
+    # dashboard. An existing unit is never renamed to gain one.
+    hidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -605,7 +642,8 @@ def _value_update(
         shown = catalog.word("yes" if raw else "no", lang)
     elif not shown and isinstance(raw, str) and ".EnumType." in raw and text.valid_key(raw):
         shown = catalog.humanize(raw)  # an enum value Home Connect sent no name for
-    shown = text.clean_label(shown or _bare(raw), _TEXT_MAX)
+    fallback = "-" if raw is None else _bare(raw)  # a reported null has no text of its own
+    shown = text.clean_label(shown or fallback, _TEXT_MAX)
     return _update(dev, unit, label, item, "text", 0, text.escape(shown))
 
 
@@ -621,10 +659,14 @@ def _main_setting(key: str) -> bool:
 def _dynamic(update: DeviceUpdate, key: str, kind: str) -> DeviceUpdate:
     """Every dynamic unit carries its Home Connect key and kind in its own Options, so a lost
     snapshot is rebuilt from the devices themselves, never guessed from names (spec 4.4). Whether
-    it starts used is catalog.used_at_creation."""
+    it starts used is catalog.used_at_creation, and whether it also starts hidden is
+    catalog.hidden_at_creation."""
     shown = catalog.used_at_creation(key, _main_setting(key))
     return replace(
-        update, options={**update.options, "HCKey": key, "HCKind": kind}, used=1 if shown else 0
+        update,
+        options={**update.options, "HCKey": key, "HCKind": kind},
+        used=1 if shown else 0,
+        hidden=catalog.hidden_at_creation(key),
     )
 
 
@@ -674,6 +716,89 @@ def _phase(app: model.Appliance, state: str | None) -> str:
     return "idle"
 
 
+def _run_value(
+    app: model.Appliance, key: str, value: model.Value | None, idle: bool
+) -> model.Value | None:
+    """A run-scoped value as the cards show it: its reset value outside a run and when it was
+    reported before the current run started, so the last run's phase never shows in the next
+    one. Derived from a reported OperationState, like the run cards (spec 6.4)."""
+    reset = catalog.RUN_SCOPED.get(key)
+    if reset is None or value is None:
+        return value
+    left_over = idle or app.seq.get(key, 0) < app.run_started
+    return model.Value(reset) if left_over else value
+
+
+def _bounded_text(body: str, suffix: str = "") -> str:
+    """A device text bounded to _TEXT_MAX as a whole, the suffix kept. Cleaned before escaping:
+    clean_label drops the ';' that ends an HTML entity, and a clip after escaping could cut one."""
+    return text.escape(text.clean_label(body, _TEXT_MAX - len(suffix)) + suffix)
+
+
+def _run_summary(app: model.Appliance, state: str | None, lang: str, now: float) -> list[str]:
+    """The run's parts of the State line while a program runs: phase, progress and finish time.
+
+    Progress moves in steps of ten and the finish time is rounded to the minute: every change
+    rewrites the Alert text, which adds a history row and fires State notifications.
+    """
+    if _phase(app, state) != "running":
+        return []
+    parts: list[str] = []
+    for key, store in ((_PROCESS_PHASE, app.options), (_PROGRAM_PHASE, app.status)):
+        value = _run_value(app, key, store.get(key), False)
+        if value is None or not text.valid_key(value.value):
+            continue
+        if value.value in catalog.RUN_SCOPED.values():  # the "not running" reset value
+            continue
+        name = value_label(app, value.value, lang)
+        parts.append(name[:1].lower() + name[1:])
+    progress = app.options.get(catalog.PROGRESS)
+    percent = finite_number(progress.value) if progress is not None else None
+    if percent is not None:
+        parts.append(f"{int(min(max(percent, 0.0), 100.0)) // 10 * 10}%")
+    finish_at = _finish_at(app, state, now)
+    # A finish time already passed (the countdown stopped arriving) is never shown.
+    if (app.active_program or app.selected_program) and finish_at is not None and finish_at > now:
+        estimated = app.options.get(catalog.ESTIMATED)
+        about = f"{catalog.word('about', lang)} " if estimated and estimated.value is True else ""
+        finish = round(finish_at / 60) * 60
+        parts.append(f"{catalog.word('ready_at', lang)} {about}{clock(finish)}")
+    return parts
+
+
+def _program_settings(app: model.Appliance, program: str, lang: str) -> list[str]:
+    """The program's options that differ from normal, for the Program text (spec: Program).
+
+    Home Connect gives no default to compare against, so "normal" is off: a false switch, an
+    enum value meaning off and a zero are left out, every other value is shown. Values the run
+    summary or a card of their own already shows, and readings such as a forecast, are left out
+    too. Only the options of the
+    program's own last payload count: app.options also holds earlier programs' values, and a
+    payload without an option list shows the program name alone.
+    """
+    out: list[str] = []
+    for key in sorted(app.program_options.get(program, frozenset()) & app.options.keys()):
+        if key in _RUN_OPTION_KEYS or key in _READING_OPTION_KEYS:
+            continue
+        value = app.options[key]
+        # Only the first letter: names such as "i-DOS 2" keep their inner capitals.
+        name = catalog.name_for(app.names, key, lang)
+        name = name[:1].lower() + name[1:]
+        if value.value is True:
+            out.append(name)
+        elif isinstance(value.value, str) and text.valid_key(value.value):
+            # Off, FanOff, IntensiveStageOff: every value ending in "Off" means off.
+            if not value.value.rsplit(".", 1)[-1].endswith("Off"):
+                out.append(value_label(app, value.value, lang))
+        else:
+            number = finite_number(value.value)
+            if number:  # None (no usable number) and 0 alike
+                unit = text.clean_label(value.unit, _UNIT_TEXT_MAX)
+                shown = _fmt(round(number / setpoint_scale(unit), 2))
+                out.append(" ".join(filter(None, (name, shown, setpoint_unit(unit, lang)))))
+    return out
+
+
 def _run_cards(
     app: model.Appliance, dev: str, label: str, lang: str, now: float, state: str | None
 ) -> list[DeviceUpdate]:
@@ -687,10 +812,9 @@ def _run_cards(
     keeps the last countdown; it is only ignored here.
 
     A disconnected appliance has reported no state that ends the run, so its cards are left as
-    they were (spec 7.4: DISCONNECTED writes nothing but unit 1), with one exception: a "ready
-    at" time that has passed is never shown, so the program text drops it. A model that knows no
-    state and no run (just after a restart) resets the program text, connected or not, so a
-    stored "ready at" cannot outlive the run it described.
+    they were (spec 7.4: DISCONNECTED writes nothing but unit 1). A model that knows no state and
+    no run (just after a restart) resets the program text, connected or not, so a stored program
+    cannot outlive the run it described.
     """
     out: list[DeviceUpdate] = []
     phase = _phase(app, state)
@@ -705,33 +829,30 @@ def _run_cards(
             dev, UNIT_TIME, label, time_item, "minutes", 0, str(minutes), options=options
         )
 
-    def program_text(svalue: str) -> DeviceUpdate:
+    def program_text(program: str | None, suffix: str = "") -> DeviceUpdate:
+        """The program and its settings, "-" when there is no program."""
+        if not program:
+            svalue = "-"
+        else:
+            name = catalog.name_for(app.names, program, lang)
+            svalue = _bounded_text(
+                ", ".join([name, *_program_settings(app, program, lang)]), suffix
+            )
         return _update(dev, UNIT_PROGRAM, label, program_item, "text", 0, svalue)
-
-    def name_of(program: str | None) -> str:
-        return text.escape(catalog.name_for(app.names, program, lang)) if program else ""
 
     def reset(update: DeviceUpdate, reported: bool) -> DeviceUpdate:
         return update if reported else replace(update, create=False)
 
-    def finish_passed(program: str | None) -> bool:
-        finish_at = _finish_at(app, state, now)
-        return bool(program) and finish_at is not None and finish_at <= now
-
     has_progress = catalog.PROGRESS in app.options
-    selected = name_of(app.selected_program)
     selected_suffix = f" ({catalog.word('selected', lang)})"
-    idle_program = program_text(selected + selected_suffix if selected else "-")
+    idle_program = program_text(app.selected_program, selected_suffix)
     if state is None and app.active_program is None and not (has_progress or has_time):
         if not app.has_programs():
             return out
         return [reset(idle_program, app.selected_program is not None)]
-    program = app.active_program or app.selected_program
     if not app.connected:
-        if phase == "running" and finish_passed(program):
-            suffix = "" if app.active_program else selected_suffix
-            out.append(reset(program_text(name_of(program) + suffix), False))
         return out
+    program = app.active_program or app.selected_program
     if phase == "idle":
         idle_progress = _update(dev, UNIT_PROGRESS, label, progress_item, "percentage", 0, "0")
         out.append(reset(idle_progress, has_progress))
@@ -742,9 +863,11 @@ def _run_cards(
         if has_progress:  # a progress never reported is left as it is
             out.append(_update(dev, UNIT_PROGRESS, label, progress_item, "percentage", 0, "100"))
         out.append(reset(time_update(0), has_time))
-        shown = name_of(program)
         note = catalog.word("finished", lang)
-        finished = program_text(f"{shown}, {note}" if shown else note.capitalize())
+        if program:
+            finished = program_text(program, f", {note}")
+        else:
+            finished = _update(dev, UNIT_PROGRAM, label, program_item, "text", 0, note.capitalize())
         out.append(reset(finished, app.has_programs()))
         return out
     progress = app.options.get(catalog.PROGRESS)
@@ -759,21 +882,8 @@ def _run_cards(
     seconds = finite_number(remaining.value) if remaining is not None else None
     if seconds is not None:
         out.append(time_update(_ceil_minutes(seconds)))
-    finish_at = _finish_at(app, state, now)
-    if program and finish_at is not None and finish_at > now:
-        estimated = app.options.get(catalog.ESTIMATED)
-        about = f"{catalog.word('about', lang)} " if estimated and estimated.value is True else ""
-        # Rounded to the minute, so the text changes only when the finish time moves by one.
-        finish = round(finish_at / 60) * 60
-        out.append(
-            program_text(
-                f"{name_of(program)}, {catalog.word('ready_at', lang)} {about}{clock(finish)}"
-            )
-        )
-    elif program:
-        # A finish time already passed (the countdown stopped arriving) is never shown.
-        suffix = "" if app.active_program else selected_suffix
-        out.append(program_text(name_of(program) + suffix))
+    if program:
+        out.append(program_text(program, "" if app.active_program else selected_suffix))
     return out
 
 
@@ -801,13 +911,65 @@ def _status_code(
     return replace(update, name=f"${update.name}")
 
 
+def open_actions(app: model.Appliance) -> list[str]:
+    """Keys of the present events that may need the user: most serious first, then newest first.
+    A level Home Connect adds later ranks below every known one."""
+    keys = [
+        k
+        for k, ev in app.events.items()
+        if ev.value == model.PRESENT and catalog.is_action_event(k)
+    ]
+    return sorted(
+        keys,
+        key=lambda k: (catalog.EVENT_RANK.get(app.events[k].level, 0), app.seq.get(k, 0)),
+        reverse=True,
+    )
+
+
+def _top_colour(app: model.Appliance, open_keys: list[str]) -> int:
+    """Colour of the most serious open event; a level Home Connect adds later shows as a hint,
+    as on the event's own card."""
+    return catalog.EVENT_LEVEL_COLOUR.get(app.events[open_keys[0]].level, catalog.YELLOW)
+
+
+def _notifications(
+    app: model.Appliance, state: persistence.State, dev: str, label: str, lang: str
+) -> DeviceUpdate | None:
+    """Planned once an action event exists, and from then on (unit_alloc is persisted) so the card
+    can return to "no notification". Events are allocated after the fixed units, hence the check on
+    app.events as well: the card must appear on the pass the first event arrives.
+
+    Events are not persisted; after a restart they come back only with the stream's replay of the
+    present ones. Until the appliance has sent an event in this run the card is not planned at all
+    and keeps its text, as the per-message cards do, instead of flashing "no notification"."""
+    if not app.events:
+        return None
+    known = any(catalog.is_action_event(k) for k in (*state.unit_alloc.get(dev, {}), *app.events))
+    if not known:
+        return None
+    open_keys = open_actions(app)
+    item = catalog.word("notifications", lang)
+    if not open_keys:
+        none = catalog.word("no_notification", lang)
+        return _update(dev, UNIT_NOTIFICATIONS, label, item, "alert", catalog.GREY, none)
+    names = ", ".join(catalog.name_for(app.names, k, lang) for k in open_keys)
+    # Clean before escaping: clean_label drops the ';' that ends an HTML entity.
+    svalue = text.escape(text.clean_label(names, _TEXT_MAX))
+    level = _top_colour(app, open_keys)
+    return _update(dev, UNIT_NOTIFICATIONS, label, item, "alert", level, svalue)
+
+
 def _fixed(
-    app: model.Appliance, dev: str, label: str, lang: str, now: float, stale: bool
+    app: model.Appliance,
+    persisted: persistence.State,
+    dev: str,
+    label: str,
+    lang: str,
+    now: float,
+    stale: bool,
 ) -> list[DeviceUpdate]:
     out: list[DeviceUpdate] = []
     state = app.operation_state()
-    program = app.active_program or app.selected_program
-    program_name = text.escape(catalog.name_for(app.names, program, lang)) if program else ""
     state_item = catalog.word("state", lang)
     door = app.status.get(catalog.DOOR_STATE)
     if not app.connected:
@@ -815,13 +977,29 @@ def _fixed(
         out.append(_update(dev, UNIT_STATE, label, state_item, "alert", catalog.GREY, offline))
     elif state:
         # An unknown state is shown humanized, so its text comes from Home Connect.
-        parts = [text.escape(text.clean_label(catalog.state_name(state, lang), _LABEL_MAX))]
+        shown = text.clean_label(catalog.state_name(state, lang), _LABEL_MAX)
+        colour = catalog.STATE_COLOUR.get(state, catalog.GREY)
+        # Until the stream replays the open events after a restart, State shows the state without
+        # the message. Accepted: the replay comes with the stream's connect, which starts with the
+        # appliance list, so the gap is short and at worst adds two history rows; holding State back
+        # instead would hide every state of an appliance with no open message.
+        # Only "Action required" names its reason: in any other state the Notifications card
+        # already shows the message, and State repeating it made the two cards say the same.
+        open_keys = open_actions(app) if state == "ActionRequired" else []
+        if open_keys:
+            top = text.clean_label(catalog.name_for(app.names, open_keys[0], lang), _LABEL_MAX)
+            shown += f": {top[:1].lower() + top[1:]}"
+            if len(open_keys) > 1:
+                shown += " " + catalog.word("action_more", lang).format(n=len(open_keys) - 1)
+            colour = max(colour, _top_colour(app, open_keys))
+        parts = [shown]
         if app.active_program:
-            parts.append(program_name)
+            parts.append(catalog.name_for(app.names, app.active_program, lang))
+        parts += _run_summary(app, state, lang, now)
         if door and _bare(door.value) == "Locked":
             parts.append(catalog.word("locked", lang))
-        svalue = ", ".join(parts) + (f" ({catalog.word('last_known', lang)})" if stale else "")
-        colour = catalog.STATE_COLOUR.get(state, catalog.GREY)
+        suffix = f" ({catalog.word('last_known', lang)})" if stale else ""
+        svalue = _bounded_text(", ".join(parts), suffix)
         out.append(_update(dev, UNIT_STATE, label, state_item, "alert", colour, svalue))
     power = app.settings.get(catalog.POWER_STATE)
     if power is not None:
@@ -831,6 +1009,9 @@ def _fixed(
         item = catalog.word("door", lang)
         out.append(_binary(dev, UNIT_DOOR, label, item, "door", _door_open(door)))
     out += _run_cards(app, dev, label, lang, now, state)
+    notifications = _notifications(app, persisted, dev, label, lang)
+    if notifications is not None:
+        out.append(notifications)
     code = _status_code(app, dev, label, lang, state)
     if code is not None:
         out.append(code)
@@ -959,9 +1140,18 @@ def plan_appliance(
     dev = device_id(app.ha_id)
     out = [
         replace(u, used=int(allow_control)) if u.unit in CONTROL_SHOWN_UNITS else u
-        for u in _fixed(app, dev, label, lang, now_wall, stream_stale)
+        for u in _fixed(app, state, dev, label, lang, now_wall, stream_stale)
     ]
     out += _control(app, state, dev, label, lang, allow_control, blocked)
+    # Power and the program selector are cards only while they can be used; the run units are
+    # read by scripts and summed up by State and Program. Hidden applies at creation only.
+    out = [
+        replace(u, hidden=True)
+        if u.unit in _HIDDEN_UNITS
+        or (u.unit in (UNIT_POWER, UNIT_PROGRAM_SELECT) and not allow_control)
+        else u
+        for u in out
+    ]
 
     def allocate(key: str) -> int | None:
         unit = _allocate(state, dev, key)
@@ -996,15 +1186,14 @@ def plan_appliance(
     for key, value in app.status.items():
         if key in catalog.FIXED_KEYS:
             continue
-        if idle and key in catalog.RUN_SCOPED:
-            # Derived from a reported OperationState, like the run cards (spec 6.4).
-            value = model.Value(catalog.RUN_SCOPED[key])
+        value = _run_value(app, key, value, idle)
         emit(key, _readonly_kind(key, value, {}), value, {}, True)
     if idle:
         # Not reported since a restart (these values are not persisted), but the device may still
         # show the last run's value: reset a unit that exists, never create one.
         for key, reset in catalog.RUN_SCOPED.items():
-            if key not in app.status and key in state.unit_alloc.get(dev, {}):
+            reported = key in app.status or key in app.options
+            if not reported and key in state.unit_alloc.get(dev, {}):
                 value = model.Value(reset)
                 emit(key, _readonly_kind(key, value, {}), value, {}, True, create=False)
     for key, value in app.settings.items():
@@ -1034,6 +1223,8 @@ def plan_appliance(
             capability = app.capability(key)
             if key in catalog.FIXED_KEYS or capability == "start_only":
                 continue
+            if idle and key in catalog.RUN_SCOPED and key not in app.options:
+                continue  # reset above
             if (
                 key not in app.options
                 and key not in offered
@@ -1043,7 +1234,7 @@ def plan_appliance(
                 # show, and it may have been created for a structured value, which must never
                 # be updated again (_no_device); after a restart only its kind is left to tell.
                 continue
-            value = app.options.get(key)
+            value = _run_value(app, key, app.options.get(key), idle)
             detail = model.option_detail(app, key) or {}
             if capability == "selectable":
                 wanted = _writable_kind(value, detail)
@@ -1054,7 +1245,9 @@ def plan_appliance(
         unit = allocate(key)
         if unit is None:
             continue
-        present = ev.value == model.PRESENT
+        # A prompt is not known to be cleared by Home Connect; one from before this run is over.
+        stale = catalog.is_prompt(key) and app.seq.get(key, 0) < app.run_started
+        present = ev.value == model.PRESENT and not stale
         if catalog.is_favourite(key):
             kind = _kind(state, dev, unit, "push")
             name = app.names.get(key) or key.split(".Event.", 1)[-1]

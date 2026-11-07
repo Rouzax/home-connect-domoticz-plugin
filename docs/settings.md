@@ -38,12 +38,19 @@ Off by default. While it is off, the plugin only reads from Home Connect:
 
 - every command to an appliance is refused, and the Domoticz log says why ("'Allow control' is
   off in the hardware settings");
-- the Actions, Acknowledge and Start at / Ready at devices are hidden; Program choice stays
-  visible but does not send anything;
+- the Actions, Acknowledge and Start at / Ready at devices are hidden; Program choice still
+  shows the selected program but does not send anything;
 - Remote control is hidden too: it still updates, so scripts can read it once you add it, but
   it only matters for starting an appliance from Domoticz.
 
 Switching Allow control shows or hides these devices once, at that moment.
+
+An appliance that is added while Allow control is off gets its **Power** and **Program choice**
+devices with a "$" in front of their name, which keeps them off the dashboard while scripts
+still see them ([Devices off the dashboard](devices.md#devices-off-the-dashboard)). Turning Allow
+control on later does not rename them, because a script may refer to them by name: to use them
+from the dashboard, rename them yourself without the "$" (Setup > Devices, or the device's edit
+dialog). An appliance added while Allow control is on gets them with their plain name.
 
 Turn it on to choose programs, change options and settings, and start, stop, pause or resume
 appliances from Domoticz, including from scenes, timers and scripts. A script or a misclick can
@@ -60,7 +67,7 @@ The language applies to device names, values (program names, states) and the plu
 What changes when you switch it:
 
 - Device names and values follow the new language, except names you changed yourself: those
-  are kept. A device for an appliance message (an alert) changes when the appliance next
+  are kept. A device with a "$" name keeps its "$". A device for an appliance message (an alert) changes when the appliance next
   reports that message, so it can stay in the old language for a while.
 - Device descriptions keep the language they were created in.
 

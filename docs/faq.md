@@ -81,20 +81,24 @@ app sees it again, the plugin does too.
 
 ### A device I expected is missing
 
-Settings, values the plugin has no name for, and diagnostics such as the interior light are
-created hidden. Look under Setup > Devices
-([Devices](devices.md#options-settings-and-other-values)).
+Most devices are not on the dashboard. Door, Progress, Remaining time, the program phase and
+each message are created with a "$" in front of their name, for example "$Washer Door": scripts
+see them, the dashboard does not. Settings, values the plugin has no name for, and diagnostics
+such as the interior light are created not used. Both are under Setup > Devices; filter on the
+Home Connect hardware ([Devices off the dashboard](devices.md#devices-off-the-dashboard)).
+
+The Notifications card appears only once the appliance has sent a message that needs you.
 
 ### The dryer stays Running after the laundry is dry
 
 With wrinkle guard (anti-crease) set, the dryer keeps turning the drum now and then after drying,
 for the time you set. Home Connect reports that as Running until the wrinkle guard ends, so State
-shows Running, Progress 100% and Remaining time 1 min all that time, and the Status code stays at
-40 (Running).
+shows Running at 100%, Progress 100% and Remaining time 1 min all that time, and the Status code
+stays at 40 (Running).
 
 Two devices tell the moments apart:
 
-- **Drying finished** (Drogen klaar) comes on as soon as the laundry is dry and the wrinkle guard
+- **Drying finished** (Drogen klaar, a "$" device on a new install) comes on as soon as the laundry is dry and the wrinkle guard
   starts, and goes off when the program ends. Put your "laundry is dry" notification or script
   on this one.
 - **Program finished** (Programma klaar) comes on when the whole program, wrinkle guard included,

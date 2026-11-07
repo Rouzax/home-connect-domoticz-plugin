@@ -4,6 +4,62 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A Notifications card (Meldingen) per appliance lists the open messages that need you, most
+  serious first: Home Connect's level (alert, warning, hint, info), newest first within a level.
+  It reads "No notification" when none are open, takes the colour of the most serious message,
+  and keeps listing while the appliance is offline. It is created only on an appliance that has
+  sent such a message. Messages that only report that something ended (Program finished, Drying
+  finished, Preheat finished) do not need you and are not listed.
+
+### Changed
+
+- Fewer cards on the dashboard for a new appliance: State, Notifications and Program, plus a
+  washer's meters, plus the control devices when Allow control is on, plus the few values you
+  operate or watch on that kind of appliance (an oven's set temperature and duration, a fridge's
+  setpoints and doors).
+- State carries the whole run in one line: state, program, phase, progress in steps of 10%, and
+  the time it will be ready ("about" when the appliance estimates it). When the appliance waits
+  for you (Action required), State names the reason: the most serious open message, with the
+  number of others, "Action required: drip tray full (+2)". In other states the messages are
+  only on Notifications, so the two cards never say the same thing.
+- Program shows the program and only the settings that differ from normal (switches that are
+  on, choices other than "off", numbers other than 0), and only those of the program shown. It
+  no longer shows when the program will be ready; that is now in State. Scripts that read the
+  time from the Program text need to change. On State and Program devices that already exist,
+  the description in the edit dialog still says Program shows the ready time, because Domoticz
+  descriptions are set only when a device is created.
+- New devices for scripts start with a "$" in front of their name, which keeps them off the
+  dashboard while dzVents and Lua still see them: Door, Progress, Remaining time, the program
+  phase and every message device, and Power and Program choice when the appliance is created
+  with Allow control off. Turning Allow control on later does not rename Power and Program
+  choice; remove the "$" by hand to show them. The oven's water tank and front panel statuses
+  now start not used.
+- Devices that already exist are never renamed and keep whether they are used. To get the new
+  layout on an existing install, rename these with a "$" in front (scripts keep seeing them):
+  Door, Progress, Remaining time, the dishwasher's Program phase and the washer's or dryer's
+  Process phase, each message device (such as Program finished or Rinse aid nearly empty), and
+  Power and Program choice if you keep Allow control off. The oven's water tank and front panel
+  status devices can be unticked under Setup > Devices.
+
+### Fixed
+
+- An oven could show "Inactive, Boost" after a microwave program: the oven can drop off Wi-Fi
+  while the microwave runs, so the message that the program ended never arrived. An appliance
+  that reports itself inactive or ready now shows no running program.
+- The dryer's process phase showed the last run's phase after the program ended and when the
+  next one started; it now shows "Not running" between programs.
+- A dryer's "Rate your last drying cycle" prompt could stay on for a day; it is now cleared when
+  the next program starts.
+- Dutch names for the coffee machine's messages, the washer's drum cleaning reminder, the
+  dryer's refresher water message, the oven's water tank and front panel, and the oven's heating
+  levels. Names and values Home Connect itself sends only in English stay English.
+- A unit Home Connect reported once (for example grams on a load recommendation) is kept when a
+  later report leaves it out, instead of the device showing no unit.
+
 ## [0.1.0-beta.7] - 2026-10-27
 
 ### Fixed

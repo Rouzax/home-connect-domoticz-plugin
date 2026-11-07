@@ -1,4 +1,5 @@
 import ast
+from dataclasses import replace
 from pathlib import Path
 
 import DomoticzEx as Domoticz
@@ -486,3 +487,46 @@ def test_empty_meter_value_is_never_written(domoticz):
     energy = up(41, "", type_name="kWh")
     domoticz_api.apply_updates(domoticz.Devices, [counter, energy], state)
     assert [domoticz.Devices["D1"].Units[n].updates for n in (40, 41)] == [[], []]
+
+
+def test_hidden_unit_is_created_with_a_dollar_name(domoticz):
+    state = persistence.State()
+    upd = planner.DeviceUpdate("d", 4, "Dryer Progress", "Percentage", 0, "10", hidden=True)
+    domoticz_api.apply_updates(domoticz.Devices, [upd], state)
+    unit = domoticz.Devices["d"].Units[4]
+    assert unit.Name == "$Dryer Progress" and unit.Used == 1
+    assert state.auto_names["d:4"] == "$Dryer Progress"
+
+
+def test_hidden_never_renames_an_existing_unit(domoticz):
+    state = persistence.State()
+    plain = planner.DeviceUpdate("d", 4, "Dryer Progress", "Percentage", 0, "10")
+    domoticz_api.apply_updates(domoticz.Devices, [plain], state)
+    domoticz_api.apply_updates(domoticz.Devices, [replace(plain, hidden=True, svalue="20")], state)
+    assert domoticz.Devices["d"].Units[4].Name == "Dryer Progress"
+
+
+def test_hidden_unit_follows_a_label_rename_and_keeps_its_dollar(domoticz):
+    state = persistence.State()
+    upd = planner.DeviceUpdate("d", 4, "Dryer Progress", "Percentage", 0, "10", hidden=True)
+    domoticz_api.apply_updates(domoticz.Devices, [upd], state)
+    domoticz_api.apply_updates(domoticz.Devices, [replace(upd, name="Dryer Renamed")], state)
+    assert domoticz.Devices["d"].Units[4].Name == "$Dryer Renamed"
+
+
+def test_hidden_unit_renamed_by_the_user_is_left_alone(domoticz):
+    state = persistence.State()
+    upd = planner.DeviceUpdate("d", 4, "Dryer Progress", "Percentage", 0, "10", hidden=True)
+    domoticz_api.apply_updates(domoticz.Devices, [upd], state)
+    unit = domoticz.Devices["d"].Units[4]
+    unit.Name = "My own"
+    domoticz_api.apply_updates(domoticz.Devices, [replace(upd, name="Dryer Renamed")], state)
+    assert unit.Name == "My own"
+
+
+def test_a_name_that_already_has_a_dollar_gets_no_second_one(domoticz):
+    state = persistence.State()
+    upd = planner.DeviceUpdate("d", 4, "$Code", "Text", 0, "x", hidden=True)
+    domoticz_api.apply_updates(domoticz.Devices, [upd], state)
+    domoticz_api.apply_updates(domoticz.Devices, [replace(upd, name="$Kode")], state)
+    assert domoticz.Devices["d"].Units[4].Name == "$Kode"

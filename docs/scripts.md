@@ -5,6 +5,17 @@ anything that reacts to an appliance's state, trigger on the Status code device:
 never change and do not depend on the device language
 ([Status code for scripts](devices.md#status-code-for-scripts)).
 
+State, Notifications and Program are written for people: their texts are translated, combine
+several values and may be laid out differently in a later version. Do not read values out of
+them; the one exception is the program name, which is always the part of the Program text before
+the first comma or bracket, as the example below uses it. Use the device that carries the one
+value you need instead: the Status code, the Door, Progress and Remaining time devices, or the
+device of one particular message (Rinse aid nearly empty, Drying finished). On a new install
+these have a "$" in front of their name, for example "$Washer Progress": they are off the
+dashboard, but scripts see them and trigger on them as usual ([Devices off the
+dashboard](devices.md#devices-off-the-dashboard)). If you rename one, update scripts that refer
+to it by name.
+
 ## Notify when an appliance has finished
 
 This dzVents script follows one or more appliances and sends one notification per program:
@@ -26,7 +37,8 @@ that decide which systems receive notifications.
   from before 0.1.0-beta.3), tick it under **Setup > Devices**; scripts do not see a device that
   is not used.
 - Optional, per appliance: its **Program** text device, for the program name in the message,
-  and its **Program aborted** and (dryer) **Drying finished** alert devices. An alert device only
+  and its **Program aborted** and (dryer) **Drying finished** alert devices. On a new install
+  the alert devices have a "$" name, for example "$Dryer Drying finished". An alert device only
   exists after the appliance sent that message for the first time; add its idx later, the script
   works without it.
 
@@ -97,7 +109,7 @@ local function minutes(seconds)
     return string.format('%d h %d min', math.floor(m / 60), m % 60)
 end
 
--- "Cotton, ready at about 14:59", "Cotton (selected)" or "-" -> "Cotton" or nil.
+-- "Cotton, 40°C, 1400 rpm", "Cotton (selected)" or "-" -> "Cotton" or nil.
 local function programName(domoticz, a)
     local dev = a.program and a.program > 0 and domoticz.devices(a.program)
     local text = dev and dev.text
@@ -202,7 +214,8 @@ return {
 - Programs shorter than `MIN_RUNTIME` (5 minutes) are ignored: a program started by mistake, or
   a dryer that found the laundry already dry.
 - The message texts are in `TEXT`; translate them there. The program name comes from the
-  Program device, in the plugin's device language.
+  Program device, in the plugin's device language: the script takes only the part before the
+  first comma or bracket, which is the program name, and ignores the settings after it.
 
 ### Extending it: use per program
 

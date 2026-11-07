@@ -1,3 +1,4 @@
+import html
 import json
 import time
 from dataclasses import replace
@@ -108,7 +109,8 @@ def test_remaining_time_and_finish_text():
     assert units[planner.UNIT_TIME].svalue == "51"
     assert units[planner.UNIT_TIME].options == {"Custom": "1;min"}
     assert units[planner.UNIT_PROGRESS].svalue == "87"
-    assert units[planner.UNIT_PROGRAM].svalue.startswith("Cotton, ready at about ")
+    assert units[planner.UNIT_STATE].svalue.startswith("Running, Cotton, 80%, ready at about ")
+    assert units[planner.UNIT_PROGRAM].svalue == "Cotton"
 
 
 def test_clock_is_local_hours_and_minutes():
@@ -162,7 +164,9 @@ def oven_with_details():
 
 
 def test_dynamic_option_devices_and_kinds():
-    state, units = plan(oven_with_details())
+    app = oven_with_details()
+    app.program_options["P.A"] = frozenset(app.options)
+    state, units = plan(app)
     dyn = dynamic(units)
     setpoint = dyn["Set temperature"]
     assert setpoint.type_name == "Set Point"
@@ -179,6 +183,7 @@ def test_dynamic_option_devices_and_kinds():
     )
     assert (spin.nvalue, spin.svalue) == (20, "20")
     assert dyn["Energy forecast"].type_name == "Percentage"  # read-only runtime value
+    assert "forecast" not in units[planner.UNIT_PROGRAM].svalue.lower()
     assert "Start in relative" not in dyn  # start-only: control plan
     assert state.unit_kinds[HA][str(setpoint.unit)] == "setpoint"
 
@@ -348,8 +353,9 @@ def test_hostile_names_are_escaped_and_bounded():
     app.active_program = "P.X"
     app.names["P.X"] = '<img src=x onerror="alert(1)">'
     _, units = plan(app)
-    assert "<img" not in units[planner.UNIT_STATE].svalue
-    assert "&lt;img" in units[planner.UNIT_STATE].svalue
+    for unit in (planner.UNIT_STATE, planner.UNIT_PROGRAM):
+        assert "<" not in units[unit].svalue and "&lt;" not in units[unit].svalue
+        assert 'img src=x onerror="alert(1)"' in units[unit].svalue
     long_label = "x" * 200
     updates = planner.plan_appliance(app, persistence.State(), "en", NOW, False, long_label)
     assert all(len(u.name) <= 100 for u in updates)
@@ -563,6 +569,9 @@ def test_first_discovery_offline_with_empty_cache():
     assert state.unit_alloc.get(HA, {}) == {}
 
 
+DELAYED = catalog.state_name("DelayedStart", "en")
+
+
 def delayed(**options):
     app = app_with(**{catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.DelayedStart"})
     app.active_program = "P.A"
@@ -576,7 +585,8 @@ def test_delayed_start_finish_time_laundry_uses_finish_in():
     app = delayed(**{catalog.FINISH_IN: 7200, catalog.REMAINING: 3600})
     _, units = plan(app)
     expected = planner.clock(round((NOW + 7200) / 60) * 60)
-    assert units[planner.UNIT_PROGRAM].svalue == f"Eco, ready at {expected}"
+    assert units[planner.UNIT_STATE].svalue == f"{DELAYED}, Eco, ready at {expected}"
+    assert units[planner.UNIT_PROGRAM].svalue == "Eco"
 
 
 def test_delayed_start_finish_time_oven_and_dishwasher_add_start_in():
@@ -584,10 +594,10 @@ def test_delayed_start_finish_time_oven_and_dishwasher_add_start_in():
     app.options[catalog.ESTIMATED] = model.Value(True)
     _, units = plan(app)
     expected = planner.clock(round((NOW + 5400) / 60) * 60)
-    assert units[planner.UNIT_PROGRAM].svalue == f"Eco, ready at about {expected}"
+    assert units[planner.UNIT_STATE].svalue == f"{DELAYED}, Eco, ready at about {expected}"
     del app.options[catalog.REMAINING]  # no duration known: no finish time is invented
     _, units = plan(app)
-    assert units[planner.UNIT_PROGRAM].svalue == "Eco"
+    assert units[planner.UNIT_STATE].svalue == f"{DELAYED}, Eco"
 
 
 def test_finish_text_is_stable_within_a_minute():
@@ -598,7 +608,7 @@ def test_finish_text_is_stable_within_a_minute():
     first = by_unit(planner.plan_appliance(app, persistence.State(), "en", NOW, False, "x"))
     app.options[catalog.REMAINING] = model.Value(3590, "seconds")
     later = by_unit(planner.plan_appliance(app, persistence.State(), "en", NOW + 10, False, "x"))
-    assert first[planner.UNIT_PROGRAM].svalue == later[planner.UNIT_PROGRAM].svalue
+    assert first[planner.UNIT_STATE].svalue == later[planner.UNIT_STATE].svalue
 
 
 def counting_down(state="Run", **countdowns):
@@ -611,9 +621,9 @@ def counting_down(state="Run", **countdowns):
     return app
 
 
-def program_text(app, now):
+def state_text(app, now):
     updates = planner.plan_appliance(app, persistence.State(), "en", now, False, "x")
-    return by_unit(updates)[planner.UNIT_PROGRAM].svalue
+    return by_unit(updates)[planner.UNIT_STATE].svalue
 
 
 def test_finish_time_does_not_drift_between_events():
@@ -622,36 +632,36 @@ def test_finish_time_does_not_drift_between_events():
         counting_down("DelayedStart", **{catalog.FINISH_IN: 7200}),
         counting_down("DelayedStart", **{catalog.START_IN: 1800, catalog.REMAINING: 3600}),
     ):
-        first = program_text(app, NOW)
-        assert first == program_text(app, NOW + 600)
+        first = state_text(app, NOW)
+        assert first == state_text(app, NOW + 600)
 
 
 def test_finish_time_is_anchored_to_the_receive_time():
     app = counting_down(**{catalog.REMAINING: 3600})
     app.received[catalog.REMAINING] = NOW - 600  # received ten minutes ago
     expected = planner.clock(round((NOW + 3000) / 60) * 60)
-    assert program_text(app, NOW) == f"Eco, ready at {expected}"
+    assert state_text(app, NOW) == f"Running, Eco, ready at {expected}"
     oven = counting_down("DelayedStart", **{catalog.START_IN: 1800, catalog.REMAINING: 3600})
     oven.received[catalog.START_IN] = NOW - 600
     expected = planner.clock(round((NOW + 4800) / 60) * 60)
-    assert program_text(oven, NOW) == f"Eco, ready at {expected}"
+    assert state_text(oven, NOW) == f"{DELAYED}, Eco, ready at {expected}"
 
 
 def test_consistent_countdown_event_keeps_the_minute():
     app = counting_down(**{catalog.REMAINING: 3600})
-    first = program_text(app, NOW)
+    first = state_text(app, NOW)
     app.options[catalog.REMAINING] = model.Value(3060, "seconds")
     app.received[catalog.REMAINING] = NOW + 540
-    assert program_text(app, NOW + 600) == first
+    assert state_text(app, NOW + 600) == first
 
 
 def test_program_change_rewrites_the_finish_text():
     app = counting_down(**{catalog.REMAINING: 3600})
-    first = program_text(app, NOW)
+    first = state_text(app, NOW)
     app.active_program = "P.B"
     app.names["P.B"] = "Cotton"
-    assert program_text(app, NOW) == first.replace("Eco", "Cotton")
-    assert program_text(app, NOW) != first
+    assert state_text(app, NOW) == first.replace("Eco", "Cotton")
+    assert state_text(app, NOW) != first
 
 
 def test_finish_time_through_the_model_uses_the_event_time():
@@ -666,8 +676,8 @@ def test_finish_time_through_the_model_uses_the_event_time():
     ]
     m.apply_event(sse.Event("NOTIFY", json.dumps({"haId": HA, "items": items}), HA))
     app = m.appliances[HA]
-    first = program_text(app, NOW)
-    assert first == program_text(app, NOW + 600)
+    first = state_text(app, NOW)
+    assert first == state_text(app, NOW + 600)
 
 
 CAVITY = "Cooking.Oven.Status.CurrentCavityTemperature"
@@ -1040,7 +1050,9 @@ def test_run_cards_reset_when_the_program_ends():
     for lang in ("en", "nl"):
         running = run_cards(microwave("Run"), lang)
         assert running[4] == "90" and running[5] == "1"
-        assert running[6].startswith("600 watt, ") and planner.clock(NOW + 60) in running[6]
+        assert running[6] == "600 watt"
+        _, units = plan(microwave("Run"), lang=lang)
+        assert planner.clock(NOW + 60) in units[planner.UNIT_STATE].svalue
         finished = run_cards(microwave("Finished"), lang, NOW + 300)
         assert finished == {4: "100", 5: "0", 6: RUN_CARD_TEXT[lang]["finished"]}
         ready = run_cards(microwave("Ready", active=False), lang, NOW + 600)
@@ -1066,12 +1078,12 @@ def card_6(app, now=NOW, lang="en"):
     return (units[6].svalue, units[6].create) if 6 in units else None
 
 
-def test_offline_run_drops_a_finish_time_once_it_has_passed():
+def test_offline_run_keeps_its_program_card_once_the_finish_time_has_passed():
+    # The program card carries no finish time, and the State line shows Offline.
     app = microwave("Run")
     app.connected = False
-    assert card_6(app, NOW + 30) is None  # still ahead: the card stays as it was
-    assert card_6(app, NOW + 7200) == ("600 watt", False)
-    assert run_cards(app, "en", NOW + 7200) == {6: "600 watt"}
+    assert card_6(app, NOW + 30) is None
+    assert card_6(app, NOW + 7200) is None
 
 
 def test_offline_finished_run_keeps_its_card():
@@ -1081,7 +1093,7 @@ def test_offline_finished_run_keeps_its_card():
 
 
 def test_restart_without_a_known_run_resets_the_program_card():
-    # After a restart the model knows no run, so a stored "ready at" must not survive.
+    # After a restart the model knows no run, so a stored program must not survive.
     for connected in (True, False):
         app = model.Appliance(HA, name="Oven 1", type="Oven", connected=connected)
         app.cache.programs = ["P.MW"]
@@ -1132,7 +1144,8 @@ def test_disconnect_keeps_a_running_washer_cards_and_shows_offline(domoticz):
     write()
     units = domoticz.Devices[HA].Units
     before = {n: units[n].sValue for n in (4, 5, 6)}
-    assert before[4] == "40" and before[5] == "60" and "ready at" in before[6]
+    assert before == {4: "40", 5: "60", 6: "Cotton"}
+    assert "ready at" in units[planner.UNIT_STATE].sValue
     m.apply_event(sse.Event("DISCONNECTED", "", HA))
     write()
     assert {n: units[n].sValue for n in (4, 5, 6)} == before
@@ -1153,9 +1166,11 @@ def test_cleared_active_program_resets_while_the_state_lags():
 def test_never_a_finish_time_in_the_past():
     for lang in ("en", "nl"):
         app = microwave("Run", received=NOW - 600)  # the countdown ended ten minutes ago
-        text_6 = run_cards(app, lang)[6]
-        assert text_6 == "600 watt"
-        assert "ready at" not in text_6 and "klaar om" not in text_6
+        assert run_cards(app, lang)[6] == "600 watt"
+        _, units = plan(app, lang=lang)
+        assert (
+            units[planner.UNIT_STATE].svalue == f"{catalog.state_name('Run', lang)}, 600 watt, 90%"
+        )
 
 
 def test_restart_resets_run_cards_that_exist_without_creating_them():
@@ -1991,6 +2006,14 @@ def test_diagnostics_and_duplicates_are_created_unused_even_when_named():
     for key in [*diagnostics, *options]:
         assert catalog.known(key), key  # unused by choice, not for want of a name
         assert not catalog.used_at_creation(key), key
+    app.selected_program = "P.A"
+    app.options.update(options)
+    app.options["LaundryCare.Common.Option.ReferToProgram"] = model.Value(3)
+    app.program_options["P.A"] = frozenset(options)
+    program = plan(app)[1][planner.UNIT_PROGRAM].svalue.lower()
+    for key in ("BSH.Common.Option.EnergyForecast", "BSH.Common.Option.WaterForecast"):
+        assert catalog.name_for({}, key, "en").lower() not in program
+    assert "program from washer" not in program
 
 
 def test_the_program_phase_is_reset_once_the_run_is_over():
@@ -2038,3 +2061,484 @@ def test_a_program_phase_left_from_before_a_restart_is_reset_but_never_created()
     state.unit_alloc.setdefault(HA, {})[phase] = 30
     reset = by_key(plan(app, state)[1])[phase]
     assert (reset.unit, reset.svalue, reset.create) == (30, "Not running", False)
+
+
+COFFEE = "ConsumerProducts.CoffeeMaker.Event."
+DESCALE, DRIP, WATER = (
+    COFFEE + n for n in ("DeviceShouldBeDescaled", "DripTrayFull", "WaterTankEmpty")
+)
+OFF = "BSH.Common.EnumType.EventPresentState.Off"
+ACTION_REQUIRED = "BSH.Common.EnumType.OperationState.ActionRequired"
+
+
+def alert_app(*events, state=ACTION_REQUIRED):
+    """events: (key, level, value) in the order they were observed."""
+    app = app_with(**{catalog.OPERATION_STATE: state})
+    for tick, (key, level, value) in enumerate(events, 1):
+        app.events[key] = model.EventState(value, level, "")
+        app.seq[key] = tick
+    return app
+
+
+def test_action_required_names_the_most_serious_alert_and_counts_the_rest():
+    app = alert_app(
+        (DESCALE, "hint", model.PRESENT),
+        (DRIP, "warning", model.PRESENT),
+        (WATER, "warning", model.PRESENT),
+    )
+    _, units = plan(app, lang="nl")
+    water = catalog.name_for({}, WATER, "nl")
+    shown = [catalog.name_for({}, k, "nl") for k in (WATER, DRIP, DESCALE)]
+    state_unit = units[planner.UNIT_STATE]
+    assert state_unit.svalue == (
+        f"{catalog.state_name('ActionRequired', 'nl')}: "
+        f"{water[0].lower()}{water[1:]} {catalog.word('action_more', 'nl').format(n=2)}"
+    )
+    assert state_unit.nvalue == catalog.ORANGE
+    assert units[planner.UNIT_NOTIFICATIONS].svalue == ", ".join(shown)
+    assert units[planner.UNIT_NOTIFICATIONS].nvalue == catalog.ORANGE
+    assert units[planner.UNIT_NOTIFICATIONS].description
+    assert units[planner.UNIT_NOTIFICATIONS].used == 1
+
+
+def test_single_alert_has_no_count_and_alert_colour_wins():
+    app = alert_app((DRIP, "alert", model.PRESENT))
+    _, units = plan(app)
+    assert units[planner.UNIT_STATE].svalue.endswith(": drip tray full")
+    assert units[planner.UNIT_STATE].nvalue == catalog.RED
+
+
+def test_state_names_a_message_only_when_the_appliance_requires_action():
+    # Outside "Action required" the Notifications card carries the message on its own, so State
+    # does not repeat it: neither in its text nor in its colour.
+    for name in ("Ready", "Run", "Finished"):
+        app = alert_app(
+            (DRIP, "alert", model.PRESENT), state=f"BSH.Common.EnumType.OperationState.{name}"
+        )
+        _, units = plan(app)
+        state_unit = units[planner.UNIT_STATE]
+        assert ":" not in state_unit.svalue, name
+        assert state_unit.nvalue == catalog.STATE_COLOUR[name], name
+        assert units[planner.UNIT_NOTIFICATIONS].svalue == "Drip tray full"
+
+
+def test_unknown_level_ranks_below_info():
+    app = alert_app((DRIP, "mystery", model.PRESENT), (WATER, "info", model.PRESENT))
+    assert planner.open_actions(app) == [WATER, DRIP]
+
+
+def test_finished_event_is_not_an_alert():
+    app = alert_app(
+        ("BSH.Common.Event.ProgramFinished", "hint", model.PRESENT),
+        state="BSH.Common.EnumType.OperationState.Finished",
+    )
+    _, units = plan(app)
+    assert ":" not in units[planner.UNIT_STATE].svalue
+    assert planner.UNIT_NOTIFICATIONS not in units
+    assert planner.open_actions(app) == []
+
+
+def test_event_off_clears_state_and_notifications():
+    app = alert_app((DRIP, "warning", model.PRESENT))
+    state, units = plan(app)
+    assert units[planner.UNIT_NOTIFICATIONS].nvalue == catalog.ORANGE
+    app.events[DRIP] = model.EventState(OFF, "warning", "")
+    _, units = plan(app, state)
+    notif = units[planner.UNIT_NOTIFICATIONS]
+    assert (notif.svalue, notif.nvalue) == ("No notification", catalog.GREY)
+    assert ":" not in units[planner.UNIT_STATE].svalue
+
+
+def test_no_notifications_unit_without_action_events():
+    _, units = plan(app_with())
+    assert planner.UNIT_NOTIFICATIONS not in units
+
+
+def test_notifications_unit_waits_for_the_events_after_a_restart():
+    state, _ = plan(alert_app((DRIP, "warning", model.PRESENT)))
+    assert DRIP in state.unit_alloc[HA]
+    # A restart: the saved allocation is back, the events come only with the stream.
+    m = model.Model(wall=lambda: NOW)
+    listing = [{"haId": HA, "name": "Oven 1", "connected": True}]
+    m.apply_list({"data": {"homeappliances": listing}}, 1)
+    m.apply_status(HA, {"data": {"status": [{"key": catalog.OPERATION_STATE, "value": READY}]}}, 1)
+    app = m.appliances[HA]
+    _, units = plan(app, state)
+    assert planner.UNIT_NOTIFICATIONS not in units
+    app.events["BSH.Common.Event.ProgramFinished"] = model.EventState(OFF, "hint", "")
+    _, units = plan(app, state)
+    assert units[planner.UNIT_NOTIFICATIONS].svalue == "No notification"
+
+
+def test_offline_state_ignores_open_alerts():
+    app = alert_app((DRIP, "warning", model.PRESENT))
+    app.connected = False
+    _, units = plan(app, lang="nl")
+    assert units[planner.UNIT_STATE].svalue == catalog.word("offline", "nl")
+    assert units[planner.UNIT_NOTIFICATIONS].svalue == catalog.name_for({}, DRIP, "nl")
+
+
+def test_unknown_level_colours_as_a_hint_on_both_cards():
+    app = alert_app(
+        (DRIP, "mystery", model.PRESENT), state="BSH.Common.EnumType.OperationState.Run"
+    )
+    _, units = plan(app)
+    assert units[planner.UNIT_NOTIFICATIONS].nvalue == catalog.YELLOW
+    assert units[planner.UNIT_STATE].nvalue == catalog.STATE_COLOUR["Run"]
+    app.status[catalog.OPERATION_STATE] = model.Value(ACTION_REQUIRED)
+    _, units = plan(app)
+    assert units[planner.UNIT_STATE].nvalue == max(
+        catalog.STATE_COLOUR["ActionRequired"], catalog.YELLOW
+    )
+
+
+def test_notification_names_keep_their_html_entities():
+    app = alert_app((DRIP, "warning", model.PRESENT))
+    app.names[DRIP] = "Salt & rinse aid low"
+    app.events[DRIP] = model.EventState(model.PRESENT, "warning", "")
+    # The catalog name wins over the reported one, so use a key the catalog does not know.
+    odd = "X.Y.Event.Odd"
+    app.events[odd] = model.EventState(model.PRESENT, "warning", "")
+    app.seq[odd] = 9
+    app.names[odd] = "Salt & rinse aid low"
+    _, units = plan(app)
+    assert units[planner.UNIT_NOTIFICATIONS].svalue.startswith("Salt &amp; rinse aid low")
+
+
+PROCESS_PHASE = "LaundryCare.Common.Option.ProcessPhase"
+LESS_IRONING = "LaundryCare.Common.EnumType.ProcessPhase.LessIroning"
+DRYING_TARGET = "LaundryCare.Dryer.Option.DryingTarget"
+CUPBOARD_PLUS = "LaundryCare.Dryer.EnumType.DryingTarget.CupboardDryPlus"
+WRINKLE_GUARD = "LaundryCare.Dryer.Option.WrinkleGuard"
+GENTLE = "LaundryCare.Dryer.Option.Gentle"
+
+
+def dryer_run(progress=28.0):
+    app = app_with(**{catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.Run"})
+    app.active_program = "P.C"
+    app.names["P.C"] = "Program C"
+    app.value_names[LESS_IRONING] = "Less ironing"
+    app.value_names[CUPBOARD_PLUS] = "Cupboard dry plus"
+    app.options[PROCESS_PHASE] = model.Value(LESS_IRONING)
+    app.options[catalog.PROGRESS] = model.Value(progress, "%")
+    app.options[catalog.REMAINING] = model.Value(3600, "seconds")
+    app.received[catalog.REMAINING] = NOW
+    return app
+
+
+def test_running_state_line_has_phase_progress_and_finish():
+    for lang in ("en", "nl"):
+        _, units = plan(dryer_run(), lang=lang)
+        finish = planner.clock(round((NOW + 3600) / 60) * 60)
+        expected = ", ".join(
+            [
+                catalog.state_name("Run", lang),
+                "Program C",
+                "less ironing",
+                "20%",
+                f"{catalog.word('ready_at', lang)} {finish}",
+            ]
+        )
+        assert units[planner.UNIT_STATE].svalue == expected
+        assert units[planner.UNIT_PROGRAM].svalue == "Program C"
+
+
+def test_estimated_finish_says_about_on_the_state_line():
+    app = dryer_run()
+    app.options[catalog.ESTIMATED] = model.Value(True)
+    _, units = plan(app, lang="nl")
+    about = f"{catalog.word('ready_at', 'nl')} {catalog.word('about', 'nl')} "
+    assert about in units[planner.UNIT_STATE].svalue
+
+
+def test_progress_moves_in_steps_of_ten():
+    def state_text(progress):
+        return plan(dryer_run(progress))[1][planner.UNIT_STATE].svalue
+
+    assert state_text(21) == state_text(29)
+    assert "20%" in state_text(21)
+    assert state_text(30) != state_text(29) and "30%" in state_text(30)
+    assert "100%" in state_text(140)  # clamped like the gauge
+
+
+def test_state_line_has_no_run_parts_outside_a_run():
+    app = dryer_run()
+    app.status[catalog.OPERATION_STATE] = model.Value("BSH.Common.EnumType.OperationState.Finished")
+    _, units = plan(app)
+    assert units[planner.UNIT_STATE].svalue == f"{catalog.state_name('Finished', 'en')}, Program C"
+
+
+def test_dishwasher_program_phase_shows_on_the_state_line_but_not_its_reset_value():
+    phase = "Dishcare.Dishwasher.Status.ProgramPhase"
+    app = app_with(
+        **{
+            catalog.OPERATION_STATE: "BSH.Common.EnumType.OperationState.Run",
+            phase: "Dishcare.Dishwasher.EnumType.ProgramPhase.Drying",
+        }
+    )
+    app.active_program = "P.E"
+    app.names["P.E"] = "Eco"
+    _, units = plan(app)
+    assert units[planner.UNIT_STATE].svalue == "Running, Eco, drying"
+    app.status[phase] = model.Value(catalog.RUN_SCOPED[phase])
+    _, units = plan(app)
+    assert units[planner.UNIT_STATE].svalue == "Running, Eco"
+
+
+def test_program_lists_only_settings_that_differ():
+    app = dryer_run()
+    app.options[GENTLE] = model.Value(False)
+    app.options["LaundryCare.Dryer.Option.HalfLoad"] = model.Value(False)
+    app.options["LaundryCare.Common.Option.SpeedPerfect"] = model.Value(
+        "LaundryCare.Common.EnumType.SpeedPerfect.Off"
+    )
+    app.options[DRYING_TARGET] = model.Value(CUPBOARD_PLUS)
+    app.options[WRINKLE_GUARD] = model.Value(120, "min")
+    app.options["LaundryCare.Dryer.Option.ProgramFromWasher"] = model.Value(0)
+    app.options["BSH.Common.Option.EstimatedTotalProgramTime"] = model.Value(5400, "seconds")
+    app.options[catalog.ESTIMATED] = model.Value(True)
+    app.program_options["P.C"] = frozenset(app.options)
+    for lang in ("en", "nl"):
+        _, units = plan(app, lang=lang)
+        wrinkle = catalog.name_for({}, WRINKLE_GUARD, lang)
+        wrinkle = wrinkle[:1].lower() + wrinkle[1:]
+        expected = f"Program C, Cupboard dry plus, {wrinkle} 120 min"
+        assert units[planner.UNIT_PROGRAM].svalue == expected
+
+
+def test_program_setting_names_keep_their_inner_capitals():
+    app = dryer_run()
+    idos = "LaundryCare.Washer.Option.IDos2Active"
+    app.options[idos] = model.Value(True)
+    app.options[GENTLE] = model.Value(True)
+    app.program_options["P.C"] = frozenset({idos, GENTLE})
+    _, units = plan(app)
+    assert units[planner.UNIT_PROGRAM].svalue == "Program C, gentle, i-DOS 2"
+
+
+def test_a_text_reading_without_a_value_shows_a_dash():
+    app = app_with(**{"Test.Status.Thing": None})
+    state, units = plan(app)
+    unit = state.unit_alloc[HA]["Test.Status.Thing"]
+    assert units[unit].svalue == "-"
+
+
+def test_program_text_leaves_out_readings_and_off_values():
+    app = dryer_run()
+    readings = {
+        "BSH.Common.Option.EnergyForecast": model.Value(61, "%"),
+        "BSH.Common.Option.WaterForecast": model.Value(49, "%"),
+        "LaundryCare.Common.Option.LoadRecommendation": model.Value(8000, "gram"),
+        "LaundryCare.Common.Option.ReferToProgram": model.Value(3),
+    }
+    app.options.update(readings)
+    app.options["Cooking.Hood.Option.VentingLevel"] = model.Value(
+        "Cooking.Hood.EnumType.Stage.FanOff"
+    )
+    app.options["Cooking.Hood.Option.IntensiveLevel"] = model.Value(
+        "Cooking.Hood.EnumType.IntensiveStage.IntensiveStageOff"
+    )
+    app.program_options["P.C"] = frozenset(app.options)
+    for lang in ("en", "nl"):
+        _, units = plan(app, lang=lang)
+        assert units[planner.UNIT_PROGRAM].svalue == "Program C"
+
+
+def test_program_settings_name_true_switches_and_show_seconds_as_minutes():
+    app = dryer_run()
+    app.options[GENTLE] = model.Value(True)
+    app.options["BSH.Common.Option.Duration"] = model.Value(5400, "seconds")
+    app.program_options["P.C"] = frozenset(app.options)
+    _, units = plan(app, lang="nl")
+    duration = catalog.name_for({}, "BSH.Common.Option.Duration", "nl").lower()
+    gentle = catalog.name_for({}, GENTLE, "nl").lower()
+    assert units[planner.UNIT_PROGRAM].svalue == f"Program C, {duration} 90 min, {gentle}"
+
+
+def test_program_settings_follow_the_selected_and_finished_program():
+    app = microwave("Ready", active=False)
+    app.options[DRYING_TARGET] = model.Value(CUPBOARD_PLUS)
+    app.value_names[CUPBOARD_PLUS] = "Cupboard dry plus"
+    app.program_options["P.MW"] = frozenset({DRYING_TARGET})
+    assert run_cards(app, "en")[6] == "600 watt, Cupboard dry plus (selected)"
+    app = microwave("Finished")
+    app.options[DRYING_TARGET] = model.Value(CUPBOARD_PLUS)
+    app.value_names[CUPBOARD_PLUS] = "Cupboard dry plus"
+    app.program_options["P.MW"] = frozenset({DRYING_TARGET})
+    assert run_cards(app, "en")[6] == "600 watt, Cupboard dry plus, finished"
+
+
+def test_texts_follow_a_language_switch():
+    app = dryer_run()
+    app.options[WRINKLE_GUARD] = model.Value(120, "min")
+    app.program_options["P.C"] = frozenset({WRINKLE_GUARD})
+    state = persistence.State()
+    _, en = plan(app, state, lang="en")
+    _, nl = plan(app, state, lang="nl")
+    for units, lang in ((en, "en"), (nl, "nl")):
+        line = units[planner.UNIT_STATE].svalue
+        assert line.startswith(catalog.state_name("Run", lang))
+        assert catalog.word("ready_at", lang) in line
+        assert catalog.name_for({}, WRINKLE_GUARD, lang).lower() in units[6].svalue
+    assert en[planner.UNIT_STATE].svalue != nl[planner.UNIT_STATE].svalue
+    assert en[planner.UNIT_PROGRAM].svalue != nl[planner.UNIT_PROGRAM].svalue
+
+
+def test_state_line_is_bounded_as_a_whole_without_cutting_an_entity():
+    app = dryer_run()
+    app.names["P.C"] = "Salt & pepper " * 30
+    _, units = plan(app, stale=True)
+    svalue = units[planner.UNIT_STATE].svalue
+    assert len(html.unescape(svalue)) <= planner._TEXT_MAX
+    assert svalue.endswith(f"({catalog.word('last_known', 'en')})")
+    assert "&amp;" in svalue and "& " not in svalue
+    assert html.escape(html.unescape(svalue), quote=False) == svalue
+    program = units[planner.UNIT_PROGRAM].svalue
+    assert len(html.unescape(program)) <= planner._TEXT_MAX
+    assert html.escape(html.unescape(program), quote=False) == program
+
+
+def test_program_text_lists_only_the_shown_programs_options():
+    m = model.Model(wall=lambda: NOW)
+    m.apply_list({"data": {"homeappliances": [{"haId": HA, "name": "W", "connected": True}]}}, 1)
+    state = "BSH.Common.EnumType.OperationState.Ready"
+    m.apply_status(HA, {"data": {"status": [{"key": catalog.OPERATION_STATE, "value": state}]}}, 1)
+    temp, prewash = "X.Option.Temperature", "X.Option.Prewash"
+    with_temp = {
+        "key": "P.A",
+        "name": "Program A",
+        "options": [{"key": temp, "value": 40, "unit": "°C"}, {"key": prewash, "value": True}],
+    }
+    m.apply_program(HA, "selected", {"data": with_temp}, m.tick())
+    app = m.appliances[HA]
+    selected = f" ({catalog.word('selected', 'en')})"
+    assert run_cards(app, "en")[6] == f"Program A, prewash, temperature 40 °C{selected}"
+    without = {"key": "P.B", "name": "Program B", "options": [{"key": prewash, "value": False}]}
+    m.apply_program(HA, "selected", {"data": without}, m.tick())
+    assert run_cards(app, "en")[6] == f"Program B{selected}"
+    no_list = {"key": "P.C", "name": "Program C"}
+    m.apply_program(HA, "selected", {"data": no_list}, m.tick())
+    assert run_cards(app, "en")[6] == f"Program C{selected}"
+
+
+def hidden_flags(updates):
+    return {u.unit: u.hidden for u in updates}
+
+
+def test_fixed_run_units_and_per_item_events_start_hidden():
+    app = washer()
+    app.status[catalog.DOOR_STATE] = model.Value("BSH.Common.EnumType.DoorState.Closed")
+    app.options[catalog.PROGRESS] = model.Value(40)
+    app.options[catalog.REMAINING] = model.Value(600)
+    app.events["BSH.Common.Event.ProgramFinished"] = model.EventState(model.PRESENT, "hint", "none")
+    app.events["BSH.Common.Event.ProgramFinished.Request"] = model.EventState(
+        model.PRESENT, "hint", "none"
+    )
+    app.events["Cooking.Hob.Event.Favorite.001"] = model.EventState(model.PRESENT, "hint", "none")
+    state = persistence.State()
+    updates = planner.plan_appliance(app, state, "en", NOW, False, app.name)
+    flags = hidden_flags(updates)
+    for unit in (planner.UNIT_DOOR, planner.UNIT_PROGRESS, planner.UNIT_TIME):
+        assert flags[unit] is True
+    for unit in (planner.UNIT_STATE, planner.UNIT_PROGRAM, planner.UNIT_NOTIFICATIONS):
+        assert flags.get(unit, False) is False
+    by_key = {u.options.get("HCKey"): u for u in updates if u.options.get("HCKey")}
+    assert by_key["BSH.Common.Event.ProgramFinished"].hidden is True
+    assert by_key["BSH.Common.Event.ProgramFinished.Request"].hidden is False
+    assert by_key["BSH.Common.Event.ProgramFinished.Request"].used == 0
+    assert by_key["Cooking.Hob.Event.Favorite.001"].hidden is False
+
+
+def test_power_and_program_selector_hide_unless_control_is_allowed():
+    app = washer()
+    app.settings[catalog.POWER_STATE] = model.Value("BSH.Common.EnumType.PowerState.On")
+    for allowed in (False, True):
+        updates = planner.plan_appliance(
+            app, persistence.State(), "en", NOW, False, app.name, allow_control=allowed
+        )
+        flags = hidden_flags(updates)
+        assert flags[planner.UNIT_POWER] is not allowed
+        assert flags[planner.UNIT_PROGRAM_SELECT] is not allowed
+
+
+def test_phase_units_start_hidden_and_other_options_are_not_touched():
+    assert catalog.hidden_at_creation("LaundryCare.Common.Option.ProcessPhase")
+    assert catalog.hidden_at_creation("Dishcare.Dishwasher.Status.ProgramPhase")
+    assert not catalog.hidden_at_creation("Cooking.Oven.Option.SetpointTemperature")
+    assert not catalog.hidden_at_creation("BSH.Common.Event.ProgramFinished.Request")
+    assert not catalog.hidden_at_creation("Cooking.Hob.Event.Favorite.001")
+    assert catalog.hidden_at_creation("BSH.Common.Event.ProgramFinished")
+
+
+def dryer_with_programs():
+    """A dryer run whose program list is cached, so its options get devices."""
+    app = dryer_run()
+    app.cache.programs = ["P.C"]
+    app.cache.program_details["P.C"] = {"key": "P.C", "options": [{"key": PROCESS_PHASE}]}
+    return app
+
+
+def phase_unit(updates):
+    return next(u for u in updates if u.options.get("HCKey") == PROCESS_PHASE)
+
+
+def test_dryer_phase_reads_not_running_outside_a_run():
+    for lang, word in (("en", "Not running"), ("nl", "Niet actief")):
+        app = dryer_with_programs()
+        app.status[catalog.OPERATION_STATE] = model.Value(
+            "BSH.Common.EnumType.OperationState.Inactive"
+        )
+        app.active_program = None
+        updates = planner.plan_appliance(app, persistence.State(), lang, NOW, False, app.name)
+        assert phase_unit(updates).svalue == word
+
+
+def test_dryer_phase_resets_after_a_restart_without_creating_a_unit():
+    app = dryer_with_programs()
+    state, _ = plan(app)
+    app.status[catalog.OPERATION_STATE] = model.Value("BSH.Common.EnumType.OperationState.Ready")
+    app.active_program = None
+    del app.options[PROCESS_PHASE]  # not reported since the restart
+    reset = phase_unit(planner.plan_appliance(app, state, "en", NOW, False, app.name))
+    assert (reset.svalue, reset.create) == ("Not running", False)
+
+
+def test_last_runs_phase_never_shows_at_the_start_of_the_next_run():
+    app = dryer_with_programs()
+    app.seq[PROCESS_PHASE] = 5
+    app.run_started = 9  # the new run started after the phase was last reported
+    updates = planner.plan_appliance(app, persistence.State(), "en", NOW, False, app.name)
+    units = by_unit(updates)
+    assert "less ironing" not in units[planner.UNIT_STATE].svalue
+    assert phase_unit(updates).svalue == "Not running"
+    app.seq[PROCESS_PHASE] = 12  # the new run reports its own phase
+    updates = planner.plan_appliance(app, persistence.State(), "en", NOW, False, app.name)
+    assert "less ironing" in by_unit(updates)[planner.UNIT_STATE].svalue
+    assert phase_unit(updates).svalue == "Less ironing"
+
+
+def test_a_feedback_prompt_from_before_the_run_is_cleared():
+    prompt = "LaundryCare.Dryer.Event.ProgramFeedback.CupboardDryPlus.Request"
+    app = dryer_run()
+    app.events[prompt] = model.EventState(model.PRESENT, "hint", "none")
+    app.seq[prompt] = 3
+    app.run_started = 7
+    updates = planner.plan_appliance(app, persistence.State(), "en", NOW, False, app.name)
+    unit = next(u for u in updates if u.options.get("HCKey") == prompt)
+    assert (unit.nvalue, unit.svalue) == (catalog.GREY, catalog.word("no_notification", "en"))
+    app.seq[prompt] = 8  # asked again after this run started
+    updates = planner.plan_appliance(app, persistence.State(), "en", NOW, False, app.name)
+    unit = next(u for u in updates if u.options.get("HCKey") == prompt)
+    assert unit.svalue != catalog.word("no_notification", "en")
+
+
+def test_program_text_keeps_a_unit_reported_earlier():
+    key = "Test.Option.Load"
+    m = model.Model()
+    m.appliances[HA] = app = dryer_run()
+    for item in ({"key": key, "value": 9000, "unit": "gram"}, {"key": key, "value": 8000}):
+        m.apply_event(sse.Event("NOTIFY", json.dumps({"haId": HA, "items": [item]}), HA))
+    app.names[key] = "Load"
+    app.program_options["P.C"] = frozenset({key})
+    _, units = plan(app)
+    assert units[planner.UNIT_PROGRAM].svalue.endswith("load 8000 gram")
