@@ -29,9 +29,9 @@ FONTS = Path(os.environ.get("ROBOTO_DIR", Path.home() / ".local/share/fonts/Robo
 TITLE, SUBTITLE = "Home Connect", "for Domoticz"
 TAGLINE = "Your Bosch, Siemens, Neff and Gaggenau appliances, as Domoticz devices."
 # Card files (device idx on the capture instance) in reading order: a running washer, its program
-# and remaining time, the dryer next to it, and the lifetime water meter. Not the energy meter:
-# its headline is a live power the washer never reports, so it reads 0 Watt.
-GRID = [["252", "299", "298"], ["246", "297", "339"]]
+# and notifications, the dryer next to it with its program, and the washer's lifetime water meter.
+# Not the energy meter: its headline is a live power the washer never reports, so it reads 0 Watt.
+GRID = [["253", "291", "338"], ["248", "293", "343"]]
 APPLIANCES = ["washer", "dryer", "dishwasher", "oven", "microwave", "fridge-freezer", "hood"]
 
 INK, MUTED, ACCENT = (23, 42, 63), (99, 118, 138), (0, 99, 184)

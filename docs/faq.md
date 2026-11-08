@@ -93,7 +93,7 @@ The Notifications card appears only once the appliance has sent a message that n
 
 With wrinkle guard (anti-crease) set, the dryer keeps turning the drum now and then after drying,
 for the time you set. Home Connect reports that as Running until the wrinkle guard ends, so State
-shows Running, Progress 100% and Remaining time 1 min all that time, and the Status code
+shows Running, Progress stays at 100% and Remaining time at 1 min all that time, and the Status code
 stays at 40 (Running).
 
 Two devices tell the moments apart:
