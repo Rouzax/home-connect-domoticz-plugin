@@ -148,10 +148,11 @@ _WORDS = {
 # the card is called. Keep each to one or two short sentences: the dialog is small.
 _DESCRIPTIONS = {
     "state": (
-        "What the appliance is doing now, with the running program, its phase, progress and "
-        'finish time; "{last_known}" means no update has arrived for a while.',
-        "Wat het apparaat nu doet, met het lopende programma, de fase, de voortgang en de "
-        'eindtijd; "{last_known}" betekent dat er al een tijd geen update is binnengekomen.',
+        "What the appliance is doing now, with the running program, its phase, finish time and, "
+        'if set, progress; "{last_known}" means no update has arrived for a while.',
+        "Wat het apparaat nu doet, met het lopende programma, de fase, de eindtijd en, als "
+        'ingesteld, de voortgang; "{last_known}" betekent dat er al een tijd geen update is '
+        "binnengekomen.",
     ),
     "power": (
         "Switches the appliance on or off; some appliances can be switched on here but not off.",

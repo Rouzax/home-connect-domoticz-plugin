@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 """
-<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.8" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
+<plugin key="homeconnectex" name="Home Connect" author="Rouzax" version="0.1.0-beta.9" externallink="https://github.com/Rouzax/home-connect-domoticz-plugin">
     <description>
         <h2>Home Connect</h2>
         <p>Shows your Bosch, Siemens, Neff and Gaggenau appliances from the Home Connect cloud: state, program, remaining time, settings and messages. Turn on Allow control to also operate them from Domoticz.</p>
@@ -37,6 +37,14 @@
                 <option label="Problems" value="problems" default="true"/>
                 <option label="Problems and confirmations" value="all"/>
                 <option label="Off" value="off"/>
+            </options>
+        </param>
+        <param field="StateProgress" label="Progress in State" width="160px">
+            <description>Whether the State card shows how far a running program is. Every change to the State text adds a row to its history and fires a notification you set on State: in steps of 10% that is up to ten per program, every percent up to a hundred. The exact progress is always on the Progress device, for scripts.</description>
+            <options>
+                <option label="Off" value="off" default="true"/>
+                <option label="Steps of 10%" value="tens"/>
+                <option label="Every percent" value="every"/>
             </options>
         </param>
         <param field="UpdateCheck" label="Update check" width="220px">
@@ -841,6 +849,7 @@ def _write_devices() -> None:
             warnings,
             allow_control=s.cfg.allow_control,
             blocked=s.blocked_selectors,
+            progress=s.cfg.state_progress,
         )
     needs_user = (
         s.auth_state != auth.AuthState.AUTHORIZED
