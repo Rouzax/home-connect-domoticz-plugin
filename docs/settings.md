@@ -11,6 +11,7 @@ to Home Connect within a few seconds and keeps your sign-in and devices.
 | [Allow control](#allow-control) | off | Lets Domoticz operate your appliances. |
 | [Device language](#device-language) | Same as Domoticz | Language of device names and values. |
 | [On-screen messages](#on-screen-messages) | Problems | What a command shows on screen. |
+| [Progress in State](#progress-in-state) | Off | Whether the State card shows a running program's progress. |
 | [Update check](#update-check) | Automatic | Whether the plugin tells you about a newer version. |
 | [Sign out](#sign-out) | off | Withdraws the plugin's access at Home Connect. |
 | [Debug level](#debug-level) | None | How much the plugin writes to the Domoticz log. |
@@ -91,6 +92,25 @@ Good to know:
 - It only goes to the screen: it is not sent by email, Telegram or any other notification
   system you set up in Domoticz.
 - Whatever you choose, the Domoticz log always has the result of every command.
+
+## Progress in State
+
+Whether the State card shows how far a running program is, for example "Running, Eco, 80%, ready
+at 14:35" instead of "Running, Eco, ready at 14:35".
+
+- **Off** (default): no percentage on State. The ready time already says when the program is
+  done.
+- **Steps of 10%**: the percentage rounded down to tens, so State says 90% until the program
+  reaches 100%.
+- **Every percent**: the exact percentage.
+
+Every change of the State text adds a line to that device's log and fires a notification you set
+on State. With Steps of 10% that is up to ten extra lines per program; with Every percent up to a
+hundred, for a dryer one every few minutes.
+
+The exact progress is always on the Progress device ("$" in front of its name on a new install),
+whatever you choose here, so a script or a Dashticz widget can read it there
+([Devices](devices.md)).
 
 ## Update check
 

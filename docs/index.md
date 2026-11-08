@@ -16,8 +16,8 @@ the dishwasher still needs, the oven temperature, a rinse aid warning.
 
 - **See every appliance at a glance.** Washers, dryers, dishwashers, ovens, microwaves, fridges
   and the other Home Connect appliance types appear by themselves after you sign in.
-- **Follow a program.** One State card shows the state, program, phase, progress and the time
-  it will be ready, updated within seconds from Home Connect's event stream.
+- **Follow a program.** One State card shows the state, program, phase and the time it will be
+  ready, updated within seconds from Home Connect's event stream.
 - **Automate on it.** A Status code device gives every state a fixed number, so a dzVents or
   Lua script keeps working whatever language the devices are in.
 - **Get alerts.** A Notifications card lists the messages that need you, such as "drip tray

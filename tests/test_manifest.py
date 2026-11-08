@@ -24,6 +24,7 @@ def test_settings_and_defaults():
         "AllowControl",
         "DeviceLanguage",
         "ScreenMessages",
+        "StateProgress",
         "UpdateCheck",
         "SignOut",
         "DebugLevel",
@@ -39,6 +40,9 @@ def test_settings_and_defaults():
     assert {o.get("value") for o in update if o.get("default") == "true"} == {"auto"}
     screen = params["ScreenMessages"].iter("option")
     assert {o.get("value") for o in screen if o.get("default") == "true"} == {"problems"}
+    progress = list(params["StateProgress"].iter("option"))
+    assert [o.get("value") for o in progress] == ["off", "tens", "every"]
+    assert {o.get("value") for o in progress if o.get("default") == "true"} == {"off"}
 
 
 def test_manifest_warns_about_cleartext_storage():
@@ -64,6 +68,7 @@ def test_every_setting_has_help():
     assert "turn it off" in sign_out
     assert "withdraws" in sign_out
     assert "Verbose" in help_text(params["DebugLevel"])
+    assert "Progress device" in help_text(params["StateProgress"])
 
 
 def test_sign_in_help_points_to_the_account_device_and_where_to_find_it():

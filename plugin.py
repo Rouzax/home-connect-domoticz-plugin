@@ -39,6 +39,14 @@
                 <option label="Off" value="off"/>
             </options>
         </param>
+        <param field="StateProgress" label="Progress in State" width="160px">
+            <description>Whether the State card shows how far a running program is. Every change to the State text adds a row to its history and fires a notification you set on State: in steps of 10% that is up to ten per program, every percent up to a hundred. The exact progress is always on the Progress device, for scripts.</description>
+            <options>
+                <option label="Off" value="off" default="true"/>
+                <option label="Steps of 10%" value="tens"/>
+                <option label="Every percent" value="every"/>
+            </options>
+        </param>
         <param field="UpdateCheck" label="Update check" width="220px">
             <description>Once a day the plugin asks GitHub whether a newer version exists, and announces it once through the Domoticz notification systems and in the log. Automatic reports betas while you run a beta and only stable releases while you run a stable one. It sends nothing about you or your appliances; Off stops the check.</description>
             <options>
@@ -841,6 +849,7 @@ def _write_devices() -> None:
             warnings,
             allow_control=s.cfg.allow_control,
             blocked=s.blocked_selectors,
+            progress=s.cfg.state_progress,
         )
     needs_user = (
         s.auth_state != auth.AuthState.AUTHORIZED

@@ -49,22 +49,24 @@ it is off the dashboard, while dzVents and Lua scripts see it as usual.
 ### State
 
 State answers "what is it doing and when is it done" in one line, for example "Running, Eco,
-drying, 80%, ready at 14:35":
+drying, ready at 14:35":
 
 - the state (Running, Ready, Paused, Finished and so on);
 - the running program;
 - the phase the program is in, when the appliance reports one (a dishwasher's program phase, a
   washer's or dryer's process phase);
-- the progress, in steps of 10%;
+- the progress, only if you turn on [Progress in State](settings.md#progress-in-state) (off by
+  default);
 - the time it will be ready. "about" before the time ("ready at about 14:35") means the
   appliance estimates it;
 - "Locked" while the door is locked.
 
 The phase, progress and ready time appear only while a program runs (also while paused) or
 waits for a delayed start; once it has finished, or while the appliance is idle, State shows the
-state and nothing about the last run. A part the appliance does not report is left out. Progress moves in steps of 10% and the time
-is rounded to the minute because every change of the text adds a line to the device's log and
-can trigger a notification you set on State. The exact progress is on the Progress device.
+state and nothing about the last run. A part the appliance does not report is left out. The time
+is rounded to the minute, and progress is off unless you choose otherwise, because every change
+of the text adds a line to the device's log and can trigger a notification you set on State. The
+exact progress is always on the Progress device.
 
 When the appliance stops and waits for you (state Action required), State names the reason
 right after the state: the most serious open message, with the number of other open messages,

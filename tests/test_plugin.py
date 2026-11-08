@@ -637,6 +637,24 @@ def test_discovery_creates_devices_and_starts_the_stream(run, domoticz):
     assert made["req"].take("active").ha_id == HA
 
 
+@pytest.mark.parametrize(
+    ("choice", "shown"),
+    [("off", "Running, P"), ("tens", "Running, P, 50%"), ("every", "Running, P, 57%")],
+)
+def test_progress_in_state_follows_the_setting(run, domoticz, choice, shown):
+    made = run(StateProgress=choice)
+    authorize(made)
+    discover(made)
+    answer(made, "status", body=status_body())
+    active = {"data": {"key": "P", "name": "P", "options": []}}
+    answer(made, "active", body=json.dumps(active).encode())
+    progress = {"haId": HA, "items": [{"key": "BSH.Common.Option.ProgramProgress", "value": 57}]}
+    event(made, "NOTIFY", json.dumps(progress))
+    plugin.onHeartbeat()
+    assert domoticz.Devices[HA].Units[planner.UNIT_STATE].sValue == shown
+    assert domoticz.Devices[HA].Units[planner.UNIT_PROGRESS].sValue == "57"
+
+
 def test_fresh_install_creates_account_units_in_the_injected_devices(run, domoticz):
     # A fresh hardware entry injects an empty Devices table; created units must be looked up
     # in that same table, or every creation is reported as failed.

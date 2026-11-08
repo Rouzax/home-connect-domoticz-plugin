@@ -27,9 +27,10 @@ def by_unit(updates, dev=HA):
     return {u.unit: u for u in updates if u.device_id == dev}
 
 
-def plan(app, state=None, stale=False, lang="en"):
+def plan(app, state=None, stale=False, lang="en", progress="off"):
     state = state or persistence.State()
-    return state, by_unit(planner.plan_appliance(app, state, lang, NOW, stale, app.name))
+    updates = planner.plan_appliance(app, state, lang, NOW, stale, app.name, progress=progress)
+    return state, by_unit(updates)
 
 
 def dynamic(units):
@@ -109,7 +110,7 @@ def test_remaining_time_and_finish_text():
     assert units[planner.UNIT_TIME].svalue == "51"
     assert units[planner.UNIT_TIME].options == {"Custom": "1;min"}
     assert units[planner.UNIT_PROGRESS].svalue == "87"
-    assert units[planner.UNIT_STATE].svalue.startswith("Running, Cotton, 80%, ready at about ")
+    assert units[planner.UNIT_STATE].svalue.startswith("Running, Cotton, ready at about ")
     assert units[planner.UNIT_PROGRAM].svalue == "Cotton"
 
 
@@ -1168,9 +1169,7 @@ def test_never_a_finish_time_in_the_past():
         app = microwave("Run", received=NOW - 600)  # the countdown ended ten minutes ago
         assert run_cards(app, lang)[6] == "600 watt"
         _, units = plan(app, lang=lang)
-        assert (
-            units[planner.UNIT_STATE].svalue == f"{catalog.state_name('Run', lang)}, 600 watt, 90%"
-        )
+        assert units[planner.UNIT_STATE].svalue == f"{catalog.state_name('Run', lang)}, 600 watt"
 
 
 def test_restart_resets_run_cards_that_exist_without_creating_them():
@@ -2228,7 +2227,7 @@ def dryer_run(progress=28.0):
 
 def test_running_state_line_has_phase_progress_and_finish():
     for lang in ("en", "nl"):
-        _, units = plan(dryer_run(), lang=lang)
+        _, units = plan(dryer_run(), lang=lang, progress="tens")
         finish = planner.clock(round((NOW + 3600) / 60) * 60)
         expected = ", ".join(
             [
@@ -2253,12 +2252,28 @@ def test_estimated_finish_says_about_on_the_state_line():
 
 def test_progress_moves_in_steps_of_ten():
     def state_text(progress):
-        return plan(dryer_run(progress))[1][planner.UNIT_STATE].svalue
+        return plan(dryer_run(progress), progress="tens")[1][planner.UNIT_STATE].svalue
 
     assert state_text(21) == state_text(29)
     assert "20%" in state_text(21)
     assert state_text(30) != state_text(29) and "30%" in state_text(30)
     assert "100%" in state_text(140)  # clamped like the gauge
+
+
+def test_progress_every_percent():
+    def state_text(progress):
+        return plan(dryer_run(progress), progress="every")[1][planner.UNIT_STATE].svalue
+
+    assert "21%" in state_text(21) and "29%" in state_text(29)
+    assert "99%" in state_text(99.7)  # whole percent, never rounded up to done
+    assert "100%" in state_text(140) and "0%" in state_text(-5)
+
+
+def test_progress_off_leaves_state_without_a_percentage():
+    _, units = plan(dryer_run(57))
+    assert "%" not in units[planner.UNIT_STATE].svalue
+    assert units[planner.UNIT_STATE].svalue.startswith("Running, Program C, less ironing, ready at")
+    assert units[planner.UNIT_PROGRESS].svalue == "57"  # scripts keep the exact value
 
 
 def test_state_line_has_no_run_parts_outside_a_run():

@@ -12,6 +12,8 @@ _DEBUG_LEVELS = {"0": 0, "1": 1, "2": 2}
 _SCREEN_MESSAGES = frozenset({"off", "problems", "all"})
 # Which releases the update check reports (update_check.CHANNELS).
 _UPDATE_CHECKS = frozenset({"auto", "stable", "beta", "off"})
+# How State shows a running program's progress: not at all, in steps of 10%, or every percent.
+_STATE_PROGRESS = frozenset({"off", "tens", "every"})
 # Catches pasted quotes and stray spaces only. The ID is not checked against the Home Connect
 # developer portal, so a well-formed but wrong ID still passes here and fails at sign-in.
 _CLIENT_ID_SHAPE = re.compile(r"^[A-Za-z0-9._~-]{8,128}$")
@@ -29,6 +31,7 @@ class Config:
     debug_level: int
     screen_messages: str
     update_check: str
+    state_progress: str
     # The manifest version Domoticz passes as Parameters["Version"]; "" when it passes none.
     plugin_version: str
     hardware_id: str
@@ -72,6 +75,11 @@ def parse_config(params: Mapping[str, str]) -> Config:
         warnings.append(f"unknown update check choice {update_check!r}; using auto")
         update_check = "auto"
 
+    state_progress = str(params.get("StateProgress", "off")).strip() or "off"
+    if state_progress not in _STATE_PROGRESS:
+        warnings.append(f"unknown progress in state choice {state_progress!r}; using off")
+        state_progress = "off"
+
     return Config(
         client_id=client_id,
         client_secret=str(params.get("Password", "")).strip(),
@@ -82,6 +90,7 @@ def parse_config(params: Mapping[str, str]) -> Config:
         debug_level=debug_level,
         screen_messages=screen_messages,
         update_check=update_check,
+        state_progress=state_progress,
         plugin_version=str(params.get("Version", "")).strip(),
         hardware_id=str(params.get("HardwareID", "")),
         warnings=tuple(warnings),

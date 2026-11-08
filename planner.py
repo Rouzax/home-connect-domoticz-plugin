@@ -735,11 +735,14 @@ def _bounded_text(body: str, suffix: str = "") -> str:
     return text.escape(text.clean_label(body, _TEXT_MAX - len(suffix)) + suffix)
 
 
-def _run_summary(app: model.Appliance, state: str | None, lang: str, now: float) -> list[str]:
+def _run_summary(
+    app: model.Appliance, state: str | None, lang: str, now: float, progress: str
+) -> list[str]:
     """The run's parts of the State line while a program runs: phase, progress and finish time.
 
-    Progress moves in steps of ten and the finish time is rounded to the minute: every change
-    rewrites the Alert text, which adds a history row and fires State notifications.
+    Every change rewrites the Alert text, which adds a history row and fires State notifications,
+    so the finish time is rounded to the minute and progress is shown only as the user chose
+    (config: off, steps of ten, every percent).
     """
     if _phase(app, state) != "running":
         return []
@@ -752,10 +755,11 @@ def _run_summary(app: model.Appliance, state: str | None, lang: str, now: float)
             continue
         name = value_label(app, value.value, lang)
         parts.append(name[:1].lower() + name[1:])
-    progress = app.options.get(catalog.PROGRESS)
-    percent = finite_number(progress.value) if progress is not None else None
+    reported = app.options.get(catalog.PROGRESS) if progress != "off" else None
+    percent = finite_number(reported.value) if reported is not None else None
     if percent is not None:
-        parts.append(f"{int(min(max(percent, 0.0), 100.0)) // 10 * 10}%")
+        whole = int(min(max(percent, 0.0), 100.0))
+        parts.append(f"{whole // 10 * 10 if progress == 'tens' else whole}%")
     finish_at = _finish_at(app, state, now)
     # A finish time already passed (the countdown stopped arriving) is never shown.
     if (app.active_program or app.selected_program) and finish_at is not None and finish_at > now:
@@ -967,6 +971,7 @@ def _fixed(
     lang: str,
     now: float,
     stale: bool,
+    progress: str,
 ) -> list[DeviceUpdate]:
     out: list[DeviceUpdate] = []
     state = app.operation_state()
@@ -995,7 +1000,7 @@ def _fixed(
         parts = [shown]
         if app.active_program:
             parts.append(catalog.name_for(app.names, app.active_program, lang))
-        parts += _run_summary(app, state, lang, now)
+        parts += _run_summary(app, state, lang, now, progress)
         if door and _bare(door.value) == "Locked":
             parts.append(catalog.word("locked", lang))
         suffix = f" ({catalog.word('last_known', lang)})" if stale else ""
@@ -1132,6 +1137,7 @@ def plan_appliance(
     *,
     allow_control: bool = False,
     blocked: Container[tuple[str, int]] = (),
+    progress: str = "off",
 ) -> list[DeviceUpdate]:
     """Device updates for one appliance. A key that finds no free unit is skipped and reported
     in `warnings` (one entry per key per call, no haId) for the caller to log once, since this
@@ -1140,7 +1146,7 @@ def plan_appliance(
     dev = device_id(app.ha_id)
     out = [
         replace(u, used=int(allow_control)) if u.unit in CONTROL_SHOWN_UNITS else u
-        for u in _fixed(app, state, dev, label, lang, now_wall, stream_stale)
+        for u in _fixed(app, state, dev, label, lang, now_wall, stream_stale, progress)
     ]
     out += _control(app, state, dev, label, lang, allow_control, blocked)
     # Power and the program selector are cards only while they can be used; the run units are

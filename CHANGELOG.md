@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A Progress in State setting chooses whether the State card shows a running program's progress:
+  Off, steps of 10%, or every percent. The exact progress stays on the Progress device whatever
+  you choose.
+
+### Changed
+
+- State no longer shows a percentage by default: the ready time already says when the program is
+  done, and every change of the State text adds a line to its log and can fire a notification.
+  To get the percentage of 0.1.0-beta.8 back, set Progress in State to Steps of 10%. The State
+  description in a new device's edit dialog says progress shows only if set; existing devices
+  keep their description.
+
 ## [0.1.0-beta.8] - 2026-11-07
 
 ### Added

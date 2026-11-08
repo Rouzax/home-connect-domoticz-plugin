@@ -83,3 +83,12 @@ def test_update_check_choice_and_the_plugin_version():
     odd = config.parse_config(params(UpdateCheck="nightly"))
     assert odd.update_check == "auto"
     assert any("update check" in w for w in odd.warnings)
+
+
+def test_progress_in_state_choice():
+    assert config.parse_config(params()).state_progress == "off"
+    for value in ("off", "tens", "every"):
+        assert config.parse_config(params(StateProgress=value)).state_progress == value
+    odd = config.parse_config(params(StateProgress="half"))
+    assert odd.state_progress == "off"
+    assert any("progress in state" in w for w in odd.warnings)
