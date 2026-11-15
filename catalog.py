@@ -385,6 +385,27 @@ _METERS = {
     "LaundryCare.Washer.Status.Softener.All.Consumed": MeterInfo(
         "counter_total", ("Softener", "Wasverzachter"), "ml", "ml", 1
     ),
+    # Coffee machine beverage counters: drinks made since the machine was new. Home Connect sends
+    # a plain count (no unit); `reported` "" accepts whatever unit label it adds, since a count
+    # is never scaled. Hot water is a volume in ml, shown in litres like the water meter.
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotWater": MeterInfo(
+        "counter_total", ("Hot water", "Heet water"), "L", "ml", 1000
+    ),
+    **{
+        f"ConsumerProducts.CoffeeMaker.Status.BeverageCounter{name}": MeterInfo(
+            "counter_total", quantity, "cups", "", 1
+        )
+        for name, quantity in (
+            ("Coffee", ("Coffee", "Koffie")),
+            ("CoffeeAndMilk", ("Coffee with milk", "Koffie met melk")),
+            ("FrothyMilk", ("Milk froth", "Melkschuim")),
+            ("HotMilk", ("Hot milk", "Warme melk")),
+            ("HotWaterCups", ("Hot water", "Heet water")),
+            ("Milk", ("Milk", "Melk")),
+            ("PowderCoffee", ("Powder coffee", "Poederkoffie")),
+            ("RistrettoEspresso", ("Ristretto/espresso", "Ristretto/espresso")),
+        )
+    },
 }
 
 # EN/NL names for documented keys. They win over the names Home Connect sends, which are often
@@ -419,6 +440,61 @@ _NAMES = {
         "Koffietemperatuur",
     ),
     "ConsumerProducts.CoffeeMaker.Option.FillQuantity": ("Fill quantity", "Vulhoeveelheid"),
+    "ConsumerProducts.CoffeeMaker.Option.AromaSelect": ("Aroma", "Aroma"),
+    "ConsumerProducts.CoffeeMaker.Option.BeanContainerSelection": (
+        "Bean container",
+        "Bonenreservoir",
+    ),
+    "ConsumerProducts.CoffeeMaker.Option.BeverageSize": ("Beverage size", "Drankgrootte"),
+    "ConsumerProducts.CoffeeMaker.Option.BeveragesRemaining": (
+        "Beverages remaining",
+        "Resterende dranken",
+    ),
+    "ConsumerProducts.CoffeeMaker.Option.Coarsness": ("Grind setting", "Maalgraad"),
+    "ConsumerProducts.CoffeeMaker.Option.CoffeeMilkRatio": (
+        "Coffee/milk ratio",
+        "Verhouding koffie/melk",
+    ),
+    "ConsumerProducts.CoffeeMaker.Option.CoffeeStrength": ("Coffee strength", "Koffiesterkte"),
+    "ConsumerProducts.CoffeeMaker.Option.FlowRate": ("Flow rate", "Doorloopsnelheid"),
+    "ConsumerProducts.CoffeeMaker.Option.HotWaterTemperature": (
+        "Hot water temperature",
+        "Heetwatertemperatuur",
+    ),
+    "ConsumerProducts.CoffeeMaker.Option.MultipleBeverages": ("Two cups", "Twee kopjes"),
+    "ConsumerProducts.CoffeeMaker.Option.Shot.Count": ("Shots", "Aantal shots"),
+    "ConsumerProducts.CoffeeMaker.Setting.CupWarmer": ("Cup warmer", "Kopjeswarmer"),
+    # Beverage counters: how many of each drink the machine has made since it was new.
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterCoffee": ("Coffees made", "Aantal koffie"),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterCoffeeAndMilk": (
+        "Coffees with milk made",
+        "Aantal koffie met melk",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterFrothyMilk": (
+        "Milk froths made",
+        "Aantal melkschuim",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotMilk": (
+        "Hot milks made",
+        "Aantal warme melk",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotWater": (
+        "Hot water made",
+        "Hoeveelheid heet water",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotWaterCups": (
+        "Hot water cups made",
+        "Aantal kopjes heet water",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterMilk": ("Milks made", "Aantal melk"),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterPowderCoffee": (
+        "Powder coffees made",
+        "Aantal koffie van poeder",
+    ),
+    "ConsumerProducts.CoffeeMaker.Status.BeverageCounterRistrettoEspresso": (
+        "Ristrettos/espressos made",
+        "Aantal ristretto/espresso",
+    ),
     "Cooking.Oven.Option.FastPreHeat": ("Fast preheat", "Snel voorverwarmen"),
     "Cooking.Oven.Option.SetpointTemperature": ("Set temperature", "Ingestelde temperatuur"),
     "Cooking.Common.Setting.Lighting": ("Light", "Verlichting"),
@@ -491,6 +567,11 @@ _NAMES = {
     "ConsumerProducts.CoffeeMaker.Event.DeviceShouldBeCleaned": (
         "Cleaning needed",
         "Reiniging nodig",
+    ),
+    # Older machines send this instead of DeviceShouldBeDescaled.
+    "ConsumerProducts.CoffeeMaker.Event.DescalingNecessary": (
+        "Descaling necessary",
+        "Ontkalken noodzakelijk",
     ),
     "ConsumerProducts.CoffeeMaker.Event.DeviceShouldBeDescaled": (
         "Descaling needed",
@@ -665,7 +746,7 @@ _NUMBERED_VALUES = {
     "BSH.Common.EnumType.AmbientLightColor.Color": ("Colour {n}", "Kleur {n}"),
 }
 # Units of measure as shown on a device; the unit sent to Home Connect is never translated.
-_UNITS = {"calls": ("calls", "aanroepen")}
+_UNITS = {"calls": ("calls", "aanroepen"), "cups": ("cups", "kopjes")}
 
 
 def pick(pair: tuple[str, str], lang: str) -> str:

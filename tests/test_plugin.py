@@ -615,6 +615,26 @@ def test_a_domoticz_without_plugin_notifications_still_logs_the_refusal(run, dom
     assert "command_refused" in log_text(domoticz)
 
 
+def test_a_deleted_unit_forgets_its_kind(run, domoticz, monkeypatch):
+    run()
+    kinds = plugin._state.state.unit_kinds.setdefault(HA, {})
+    kinds.update({"1": "text", "30": "custom"})
+    plugin.onDeviceRemoved(HA, 30)
+    assert kinds == {"1": "text"}
+
+    def broken(*_):
+        raise RuntimeError
+
+    monkeypatch.setattr(domoticz_api, "forget_kind", broken)
+    plugin.onDeviceRemoved(HA, 31)
+    assert "device removal failed (RuntimeError)" in log_text(domoticz)
+
+
+def test_device_removal_before_start_is_ignored(monkeypatch):
+    monkeypatch.setattr(plugin, "_state", None)
+    plugin.onDeviceRemoved(HA, 30)
+
+
 def test_status_code_selector_commands_are_refused(run, domoticz):
     run(AllowControl="true")
     plugin.onCommand(HA, planner.UNIT_STATUS_CODE, "Set Level", 40, "")

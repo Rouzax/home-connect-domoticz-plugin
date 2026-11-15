@@ -1255,6 +1255,17 @@ def onHeartbeat():
         Domoticz.Error(f"Home Connect: heartbeat failed ({type(exc).__name__})")
 
 
+def onDeviceRemoved(DeviceID, Unit):
+    """A unit the user deleted is created again with the kind the plugin chooses now."""
+    s = _state
+    if s is None or s.disabled:
+        return
+    try:
+        domoticz_api.forget_kind(s.state, str(DeviceID), int(Unit))
+    except Exception as exc:
+        Domoticz.Error(f"Home Connect: device removal failed ({type(exc).__name__})")
+
+
 def onCommand(DeviceID, Unit, Command, Level, Color):
     s = _state
     if s is None or s.disabled:

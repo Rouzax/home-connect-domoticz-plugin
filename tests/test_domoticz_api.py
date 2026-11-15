@@ -215,6 +215,19 @@ def test_recover_never_overrides_existing_state(domoticz):
     assert state.next_unit["H1"] == 40
 
 
+def test_recover_forgets_the_kind_of_a_deleted_unit(domoticz):
+    # A counter created as "custom" by an older version: deleting it lets it return as a meter.
+    make_unit("H1", 30, {"HCKey": "K", "HCKind": "text"})
+    state = persistence.State(
+        unit_alloc={"H1": {"K": 30, "C": 31}, "H2": {"X": 30}},
+        unit_kinds={"H1": {"1": "switch", "30": "text", "31": "custom"}, "H2": {"30": "text"}},
+    )
+    domoticz_api.recover_from_devices(domoticz.Devices, state)
+    assert state.unit_kinds == {"H1": {"1": "switch", "30": "text"}, "H2": {}}
+    # The unit number stays with its key, so the new device takes the old one's place.
+    assert state.unit_alloc["H1"] == {"K": 30, "C": 31}
+
+
 def test_recover_never_reads_level_names(domoticz):
     make_unit(
         "H1", 30,

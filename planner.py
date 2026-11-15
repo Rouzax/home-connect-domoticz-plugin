@@ -559,7 +559,10 @@ def _meter_update(
     if kind == "energy_total":
         options = {}
     else:
-        options = {"ValueQuantity": catalog.pick(meter.quantity, lang), "ValueUnits": meter.units}
+        options = {
+            "ValueQuantity": catalog.pick(meter.quantity, lang),
+            "ValueUnits": catalog.unit_text(meter.units, lang),
+        }
     if number is None:
         # Never created or written without a real total: Domoticz would log 0 and count the
         # whole lifetime as the first day's use.
@@ -588,7 +591,7 @@ def _value_update(
     number = finite_number(value.value) if value is not None else None
     unit_label = key_unit(value, detail)
     meter = catalog.meter(key)
-    if meter is not None and unit_label and unit_label != meter.reported:
+    if meter is not None and meter.reported and unit_label and unit_label != meter.reported:
         # A wrong unit would write a total 1000x off into a meter whose history cannot be corrected.
         number = None
     # A unit created with another kind (an older "custom" device) keeps it, and its branch below.

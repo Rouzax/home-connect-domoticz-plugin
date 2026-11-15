@@ -266,7 +266,27 @@ def recover_from_devices(devices, state: persistence.State) -> list[tuple[str, i
                 levels[str(number)] = [k for k in keys.split("|")[1:] if k]
             else:
                 blocked.append((dev_id, number))
+    _forget_deleted_kinds(devices, state)
     return blocked
+
+
+def _forget_deleted_kinds(devices, state: persistence.State) -> None:
+    """Units deleted while the plugin was stopped; see forget_kind."""
+    for dev_id, kinds in state.unit_kinds.items():
+        dev = devices.get(dev_id)
+        existing = set(dev.Units) if dev is not None else set()
+        for number in [n for n in kinds if n.isdigit() and int(n) not in existing]:
+            forget_kind(state, dev_id, int(number))
+
+
+def forget_kind(state: persistence.State, dev_id: str, number: int) -> None:
+    """Drop the stored kind of a per-key unit the user deleted, so it comes back with the kind
+    the plugin chooses now (a beverage counter created as a plain number by an older version
+    returns as a Counter). Its unit number stays allocated to the same key. A device's type is
+    fixed once created, so only a unit that no longer exists can take a new kind; fixed units
+    take their kind from code and are left alone."""
+    if number >= persistence.FIRST_DYNAMIC_UNIT:
+        state.unit_kinds.get(dev_id, {}).pop(str(number), None)
 
 
 def log(level: str, message: str) -> None:

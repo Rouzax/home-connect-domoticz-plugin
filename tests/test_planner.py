@@ -1936,6 +1936,30 @@ def test_lifetime_totals_become_meters():
     assert nl.options["ValueQuantity"] == "Wasmiddel"
 
 
+def test_coffee_beverage_counters_become_cup_meters():
+    coffee = "ConsumerProducts.CoffeeMaker.Status.BeverageCounterCoffee"
+    hot_water = "ConsumerProducts.CoffeeMaker.Status.BeverageCounterHotWater"
+    milk = "ConsumerProducts.CoffeeMaker.Status.BeverageCounterMilk"
+    app = washer_with(
+        **{
+            coffee: model.Value(1234),
+            hot_water: model.Value(25300, "ml"),
+            # A count is never scaled, so a unit label Home Connect adds does not block it.
+            milk: model.Value(56, "cups"),
+        }
+    )
+    units = plan_washer(app, lang="nl")
+    cups, water, milks = (unit_for(units, k) for k in (coffee, hot_water, milk))
+    assert (cups.type_code, cups.switchtype, cups.svalue) == ((113, 0), 3, "1234")
+    assert (cups.options["ValueQuantity"], cups.options["ValueUnits"]) == ("Koffie", "kopjes")
+    assert (cups.options["HCKey"], cups.options["HCKind"]) == (coffee, "counter_total")
+    assert cups.used == 1
+    assert (water.svalue, water.options["ValueUnits"]) == ("25", "L")
+    assert milks.svalue == "56"
+    en = unit_for(plan_washer(app), coffee)
+    assert en.options["ValueUnits"] == "cups"
+
+
 def test_meter_is_created_only_with_a_reported_total():
     # Created empty, Domoticz would log 0 and count the whole lifetime as the first day's use.
     units = plan_washer(washer_with(**{ENERGY_TOTAL: model.Value(None, "Wh")}))

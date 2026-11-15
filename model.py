@@ -442,7 +442,11 @@ class Model:
                 # Only live items: EVENT items are replayed on every stream connect (spec 3.3),
                 # and switching off sends SelectedProgram = None while the appliance leaves.
                 self._seen_alive(app, None, resync=True)
-            if kind == "event":
+            # A message key is a message whatever stream type carries it: some appliances
+            # (coffee machines among them) send their messages as STATUS or NOTIFY items, which
+            # would otherwise land on a plain status device and never reach Notifications.
+            is_message = kind == "event" or (".Event." in key and item.get("value") is not None)
+            if is_message:
                 app.events[key] = EventState(
                     str(item.get("value", "")),
                     str(item.get("level", "")),

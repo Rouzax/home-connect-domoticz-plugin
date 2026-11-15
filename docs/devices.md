@@ -271,6 +271,31 @@ Good to know:
 - The use lands in the hour the program ended, not spread over the run.
 - The energy meter always shows 0 W: Home Connect reports energy used, not live power.
 
+## Coffee machine counters
+
+A coffee machine counts the drinks it has made since it was new. The plugin shows each counter
+as a Domoticz Counter, so its log graphs show how many cups you made per day, month and year.
+
+| Device | Unit |
+|---|---|
+| Coffees made / Aantal koffie | cups |
+| Coffees with milk made / Aantal koffie met melk | cups |
+| Ristrettos/espressos made / Aantal ristretto/espresso | cups |
+| Powder coffees made / Aantal koffie van poeder | cups |
+| Milks made / Aantal melk | cups |
+| Milk froths made / Aantal melkschuim | cups |
+| Hot milks made / Aantal warme melk | cups |
+| Hot water cups made / Aantal kopjes heet water | cups |
+| Hot water made / Hoeveelheid heet water | litres |
+
+Good to know:
+
+- A counter appears the first time the machine reports it, and only for the drinks your
+  machine makes.
+- A counter that an older version created as a plain number keeps that type. Delete it under
+  Setup > Devices and it comes back as a Counter the next time the machine reports it (its
+  history starts again).
+
 ## When the appliance or the connection is away
 
 - An appliance that is switched off at the mains or has lost Wi-Fi shows **Offline** in State,

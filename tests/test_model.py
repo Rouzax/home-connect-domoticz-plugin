@@ -152,6 +152,21 @@ def test_events_and_connection_events():
     assert m.apply_event(sse.Event("KEEP-ALIVE", "", "")).kind == "keepalive"
 
 
+def test_message_keys_in_status_and_notify_items_are_messages():
+    m = ready_model()
+    water = "ConsumerProducts.CoffeeMaker.Event.WaterTankEmpty"
+    drip = "ConsumerProducts.CoffeeMaker.Event.DripTrayFull"
+    m.apply_event(event("NOTIFY", [{"key": water, "value": model.PRESENT, "level": "warning"}]))
+    m.apply_event(event("STATUS", [{"key": drip, "value": model.PRESENT}]))
+    app = m.appliances[HA]
+    assert app.events[water] == model.EventState(model.PRESENT, "warning", "")
+    assert app.events[drip].value == model.PRESENT
+    assert water not in app.status and drip not in app.status
+    # An item without a value says nothing about the message.
+    m.apply_event(event("NOTIFY", [{"key": water}]))
+    assert app.events[water].value == model.PRESENT
+
+
 def test_event_items_name_their_alert():
     m = ready_model()
     key = "LaundryCare.Washer.Event.DrumCleanReminder"

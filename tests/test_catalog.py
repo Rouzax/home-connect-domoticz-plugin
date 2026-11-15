@@ -265,6 +265,48 @@ def test_oven_water_tank_and_front_panel_statuses_start_unused():
         assert not catalog.used_at_creation(key), key
 
 
+def test_coffee_counters_settings_and_options_are_named_and_counters_start_used():
+    prefix = "ConsumerProducts.CoffeeMaker."
+    counters = [
+        f"{prefix}Status.BeverageCounter{k}"
+        for k in (
+            "Coffee",
+            "CoffeeAndMilk",
+            "FrothyMilk",
+            "HotMilk",
+            "HotWater",
+            "HotWaterCups",
+            "Milk",
+            "PowderCoffee",
+            "RistrettoEspresso",
+        )
+    ]
+    others = [
+        f"{prefix}{k}"
+        for k in (
+            "Setting.CupWarmer",
+            "Option.AromaSelect",
+            "Option.BeanContainerSelection",
+            "Option.BeverageSize",
+            "Option.BeveragesRemaining",
+            "Option.Coarsness",
+            "Option.CoffeeMilkRatio",
+            "Option.CoffeeStrength",
+            "Option.FlowRate",
+            "Option.HotWaterTemperature",
+            "Option.MultipleBeverages",
+            "Option.Shot.Count",
+            "Event.DescalingNecessary",
+        )
+    ]
+    for key in counters + others:
+        assert catalog.catalog_name(key, "en"), key
+        assert catalog.catalog_name(key, "nl"), key
+    for key in counters:
+        assert catalog.used_at_creation(key), key
+    assert catalog.is_action_event(f"{prefix}Event.DescalingNecessary")
+
+
 def test_coffee_overdue_messages_read_achterstallig():
     for event in (
         "DeviceCalcNCleanBlockage",
